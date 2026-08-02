@@ -16,13 +16,17 @@
 # ------------------------------------------------------------------------
 import copy
 from typing import List
-import torchvision.transforms.functional as vis_F
-from torchvision.transforms import InterpolationMode
+
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn.functional as F
+import torchvision.transforms.functional as vis_F
+from matplotlib.patches import Rectangle
 from torch import nn
-from torchvision.ops.boxes import nms
 from torchvision.ops import roi_align
+from torchvision.ops.boxes import nms
+from torchvision.transforms import InterpolationMode
 from transformers import (
     AutoTokenizer,
     BertModel,
@@ -42,7 +46,7 @@ from groundingdino.util.misc import (
     nested_tensor_from_tensor_list,
 )
 from groundingdino.util.utils import get_phrases_from_posmap
-from groundingdino.util.visualizer import COCOVisualizer
+from groundingdino.util.visualizer import COCOVisualizer, renorm
 from groundingdino.util.vl_utils import create_positive_map_from_span
 
 from ..registry import MODULE_BUILD_FUNCS
@@ -52,14 +56,9 @@ from .bertwarper import (
     generate_masks_with_special_tokens,
     generate_masks_with_special_tokens_and_transfer_map,
 )
+from .matcher import build_matcher
 from .transformer import build_transformer
 from .utils import MLP, ContrastiveEmbed, sigmoid_focal_loss
-
-from .matcher import build_matcher
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
-from groundingdino.util.visualizer import renorm
 
 
 def numpy_2_cv2(np_img):
@@ -191,9 +190,9 @@ class GroundingDINO(nn.Module):
                 in_channels = hidden_dim
             self.input_proj = nn.ModuleList(input_proj_list)
         else:
-            assert (
-                two_stage_type == "no"
-            ), "two_stage_type should be no if num_feature_levels=1 !!!"
+            assert two_stage_type == "no", (
+                "two_stage_type should be no if num_feature_levels=1 !!!"
+            )
             self.input_proj = nn.ModuleList(
                 [
                     nn.Sequential(
@@ -282,7 +281,6 @@ class GroundingDINO(nn.Module):
         text_self_attention_masks = text_dict["text_self_attention_masks"]
 
         for sample_ind in range(len(labels)):
-
             label = labels[sample_ind][0]
             exemplars = exemplar_tokens[sample_ind]
             label_count = -1
@@ -1110,9 +1108,6 @@ class PostProcess(nn.Module):
         else:
             boxes = box_ops.box_cxcywh_to_xyxy(out_bbox)
 
-        # if test:
-        #     assert not not_to_xyxy
-        #     boxes[:,:,2:] = boxes[:,:,2:] - boxes[:,:,:2]
         boxes = torch.gather(boxes, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
 
         # and from relative [0, 1] to absolute [0, height] coordinates
@@ -1258,25 +1253,6 @@ def create_positive_map(tokenized, tokens_positive, cat_list, caption):
                     end_pos = tokenized.char_to_token(end_ind - 2)
             except:
                 end_pos = None
-        # except Exception as e:
-        #     print("beg:", beg, "end:", end)
-        #     print("token_positive:", tokens_positive)
-        #     # print("beg_pos:", beg_pos, "end_pos:", end_pos)
-        #     raise e
-        # if beg_pos is None:
-        #     try:
-        #         beg_pos = tokenized.char_to_token(beg + 1)
-        #         if beg_pos is None:
-        #             beg_pos = tokenized.char_to_token(beg + 2)
-        #     except:
-        #         beg_pos = None
-        # if end_pos is None:
-        #     try:
-        #         end_pos = tokenized.char_to_token(end - 2)
-        #         if end_pos is None:
-        #             end_pos = tokenized.char_to_token(end - 3)
-        #     except:
-        #         end_pos = None
         if beg_pos is None or end_pos is None:
             continue
         if beg_pos < 0 or end_pos < 0:
@@ -1289,7 +1265,6 @@ def create_positive_map(tokenized, tokens_positive, cat_list, caption):
 
 
 def create_positive_map_exemplar(input_ids, label, special_tokens):
-
     tokens_positive = torch.zeros(256, dtype=torch.float)
     count = -1
     for token_ind in range(len(input_ids)):

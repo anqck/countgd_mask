@@ -5,8 +5,8 @@ termcolor==2.4.0
 addict==2.4.0
 yapf==0.40.1
 timm==0.9.16
-torch==2.2.1
-torchvision==0.17.1
+torch==2.6.0+cu126
+torchvision==0.21.0+cu126
 transformers==4.39.1
 numpy==1.26.4
 opencv-python==4.9.0.80
