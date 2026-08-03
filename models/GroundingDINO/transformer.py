@@ -634,7 +634,7 @@ class TransformerDecoder(nn.Module):
         self,
         decoder_layer,
         num_layers,
-        norm=None,
+        norm: nn.Module | None = None,
         return_intermediate=False,
         d_model=256,
         query_dim=4,
@@ -650,7 +650,7 @@ class TransformerDecoder(nn.Module):
         self.return_intermediate = return_intermediate
         assert return_intermediate, "support return_intermediate only"
         self.query_dim = query_dim
-        assert query_dim in [2, 4], "query_dim should be 2/4 but {}".format(query_dim)
+        assert query_dim in [2, 4], f"query_dim should be 2/4 but {query_dim}"
         self.num_feature_levels = num_feature_levels
 
         self.ref_point_head = MLP(query_dim // 2 * d_model, d_model, d_model, 2)
@@ -668,19 +668,19 @@ class TransformerDecoder(nn.Module):
         self,
         tgt,
         memory,
-        tgt_mask: Optional[Tensor] = None,
-        memory_mask: Optional[Tensor] = None,
-        tgt_key_padding_mask: Optional[Tensor] = None,
-        memory_key_padding_mask: Optional[Tensor] = None,
-        pos: Optional[Tensor] = None,
-        refpoints_unsigmoid: Optional[Tensor] = None,  # num_queries, bs, 2
+        tgt_mask: Tensor | None = None,
+        memory_mask: Tensor | None = None,
+        tgt_key_padding_mask: Tensor | None = None,
+        memory_key_padding_mask: Tensor | None = None,
+        pos: Tensor | None = None,
+        refpoints_unsigmoid: Tensor | None = None,  # num_queries, bs, 2
         # for memory
-        level_start_index: Optional[Tensor] = None,  # num_levels
-        spatial_shapes: Optional[Tensor] = None,  # bs, num_levels, 2
-        valid_ratios: Optional[Tensor] = None,
+        level_start_index: Tensor | None = None,  # num_levels
+        spatial_shapes: Tensor | None = None,  # bs, num_levels, 2
+        valid_ratios: Tensor | None = None,
         # for text
-        memory_text: Optional[Tensor] = None,
-        text_attention_mask: Optional[Tensor] = None,
+        memory_text: Tensor | None = None,
+        text_attention_mask: Tensor | None = None,
     ):
         """
         Input:
@@ -715,9 +715,6 @@ class TransformerDecoder(nn.Module):
             raw_query_pos = self.ref_point_head(query_sine_embed)  # nq, bs, 256
             pos_scale = self.query_scale(output) if self.query_scale is not None else 1
             query_pos = pos_scale * raw_query_pos
-            # if os.environ.get("SHILONG_AMP_INFNAN_DEBUG") == '1':
-            #     if query_pos.isnan().any() | query_pos.isinf().any():
-            #         import ipdb; ipdb.set_trace()
 
             # main process
             output = layer(
@@ -744,22 +741,15 @@ class TransformerDecoder(nn.Module):
                     print(f"num_nan {num_nan}, num_inf {num_inf}")
                 except Exception as e:
                     print(e)
-                    # if os.environ.get("SHILONG_AMP_INFNAN_DEBUG") == '1':
-                    #     import ipdb; ipdb.set_trace()
 
             # iter update
             if self.bbox_embed is not None:
-                # box_holder = self.bbox_embed(output)
-                # box_holder[..., :self.query_dim] += inverse_sigmoid(reference_points)
-                # new_reference_points = box_holder[..., :self.query_dim].sigmoid()
-
                 reference_before_sigmoid = inverse_sigmoid(reference_points)
                 delta_unsig = self.bbox_embed[layer_id](output)
                 outputs_unsig = delta_unsig + reference_before_sigmoid
                 new_reference_points = outputs_unsig.sigmoid()
 
                 reference_points = new_reference_points.detach()
-                # if layer_id != self.num_layers - 1:
                 ref_points.append(new_reference_points)
 
             intermediate.append(self.norm(output))

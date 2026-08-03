@@ -14,15 +14,15 @@
 # Modified from Deformable DETR (https://github.com/fundamentalvision/Deformable-DETR)
 # Copyright (c) 2020 SenseTime. All Rights Reserved.
 # ------------------------------------------------------------------------
-from transformers.tokenization_utils_base import BatchEncoding
 import copy
-from typing import Literal, Any
+from typing import Any, Literal
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 from torchvision.ops import roi_align
 from torchvision.ops.boxes import nms
+from transformers.tokenization_utils_base import BatchEncoding
 
 from groundingdino.util import box_ops, get_tokenlizer
 from groundingdino.util.misc import (
@@ -84,7 +84,7 @@ class GroundingDINO(nn.Module):
         super().__init__()
         self.num_queries = num_queries
         self.transformer = transformer
-        self.hidden_dim = hidden_dim = transformer.d_model
+        self.hidden_dim = transformer.d_model
         self.num_feature_levels = num_feature_levels
         self.nheads = nheads
         self.max_text_len = 256
@@ -95,19 +95,9 @@ class GroundingDINO(nn.Module):
         assert query_dim == 4
 
         # visual exemplar cropping
-        self.feature_map_proj = nn.Conv2d((256 + 512 + 1024), hidden_dim, kernel_size=1)
-        self.feature_map_encoder = TransformerEncoder(
-            3,
-            hidden_dim,
-            8,
-            0.1,
-            1e-5,
-            8,
-            True,
-            nn.GELU,  # ty: ignore[invalid-argument-type]
-            True,
+        self.feature_map_proj = nn.Conv2d(
+            (256 + 512 + 1024), self.hidden_dim, kernel_size=1
         )
-        self.feature_map_pos_embed = PositionalEncodingsFixed(hidden_dim)
 
         # for dn training
         self.num_patterns = num_patterns
@@ -128,7 +118,6 @@ class GroundingDINO(nn.Module):
         )
         nn.init.constant_(self.feat_map.bias.data, 0)
         nn.init.xavier_uniform_(self.feat_map.weight.data)
-        # freeze
 
         # special tokens
         self.specical_tokens = self.tokenizer.convert_tokens_to_ids(
@@ -136,6 +125,7 @@ class GroundingDINO(nn.Module):
         )
 
         # prepare input projection layers
+        # num_feature_levels = 4
         if num_feature_levels > 1:
             num_backbone_outs = len(backbone.num_channels)
             input_proj_list = []
@@ -143,37 +133,42 @@ class GroundingDINO(nn.Module):
                 in_channels = backbone.num_channels[i]
                 input_proj_list.append(
                     nn.Sequential(
-                        nn.Conv2d(in_channels, hidden_dim, kernel_size=1),
-                        nn.GroupNorm(32, hidden_dim),
+                        nn.Conv2d(in_channels, self.hidden_dim, kernel_size=1),
+                        nn.GroupNorm(32, self.hidden_dim),
                     )
                 )
             for _ in range(num_feature_levels - num_backbone_outs):
                 input_proj_list.append(
                     nn.Sequential(
                         nn.Conv2d(
-                            in_channels, hidden_dim, kernel_size=3, stride=2, padding=1
+                            in_channels,
+                            self.hidden_dim,
+                            kernel_size=3,
+                            stride=2,
+                            padding=1,
                         ),
-                        nn.GroupNorm(32, hidden_dim),
+                        nn.GroupNorm(32, self.hidden_dim),
                     )
                 )
-                in_channels = hidden_dim
+                in_channels = self.hidden_dim
             self.input_proj = nn.ModuleList(input_proj_list)
-        else:
+        else:  # dead branch
             assert two_stage_type == "no", (
                 "two_stage_type should be no if num_feature_levels=1 !!!"
             )
             self.input_proj = nn.ModuleList(
                 [
                     nn.Sequential(
-                        nn.Conv2d(backbone.num_channels[-1], hidden_dim, kernel_size=1),
-                        nn.GroupNorm(32, hidden_dim),
+                        nn.Conv2d(
+                            backbone.num_channels[-1], self.hidden_dim, kernel_size=1
+                        ),
+                        nn.GroupNorm(32, self.hidden_dim),
                     )
                 ]
             )
 
         self.backbone = backbone
         self.aux_loss = aux_loss
-        self.box_pred_damping = None
 
         self.iter_update = iter_update
         assert iter_update, "Why not iter_update?"
@@ -183,24 +178,22 @@ class GroundingDINO(nn.Module):
         # prepare class & box embed
         _class_embed = ContrastiveEmbed()
 
-        _bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
+        _bbox_embed = MLP(self.hidden_dim, self.hidden_dim, 4, 3)
         nn.init.constant_(_bbox_embed.layers[-1].weight.data, 0)  # ty: ignore[invalid-argument-type]
         nn.init.constant_(_bbox_embed.layers[-1].bias.data, 0)  # ty: ignore[invalid-argument-type]
 
+        # True
         if dec_pred_bbox_embed_share:
-            box_embed_layerlist = [
-                _bbox_embed for i in range(transformer.num_decoder_layers)
-            ]
-        else:
-            box_embed_layerlist = [
+            self.bbox_embed = nn.ModuleList(
+                [_bbox_embed] * transformer.num_decoder_layers
+            )
+        else:  # dead branch
+            self.bbox_embed = [
                 copy.deepcopy(_bbox_embed)
-                for i in range(transformer.num_decoder_layers)
-            ]
-        class_embed_layerlist = [
-            _class_embed for i in range(transformer.num_decoder_layers)
-        ]
-        self.bbox_embed = nn.ModuleList(box_embed_layerlist)
-        self.class_embed = nn.ModuleList(class_embed_layerlist)
+            ] * transformer.num_decoder_layers
+        self.class_embed = nn.ModuleList(
+            [_class_embed] * transformer.num_decoder_layers
+        )
         self.transformer.decoder.bbox_embed = self.bbox_embed
         self.transformer.decoder.class_embed = self.class_embed
 
@@ -1076,100 +1069,120 @@ class PostProcess(nn.Module):
 
 
 @MODULE_BUILD_FUNCS.registe_with_name(module_name="groundingdino")
-def build_groundingdino(args):
+def build_groundingdino(
+    args,
+) -> tuple[GroundingDINO, SetCriterion, dict[str, PostProcess]]:
     device = torch.device(args.device)
-    backbone = build_backbone(args)
-    transformer = build_transformer(args)
-
-    dn_labelbook_size = args.dn_labelbook_size
-    dec_pred_bbox_embed_share = args.dec_pred_bbox_embed_share
-    sub_sentence_present = args.sub_sentence_present
-
-    model = GroundingDINO(
-        backbone,
-        transformer,
-        num_queries=args.num_queries,
-        aux_loss=args.aux_loss,
-        iter_update=True,
-        query_dim=4,
-        num_feature_levels=args.num_feature_levels,
-        nheads=args.nheads,
-        dec_pred_bbox_embed_share=dec_pred_bbox_embed_share,
-        two_stage_type=args.two_stage_type,
-        two_stage_bbox_embed_share=args.two_stage_bbox_embed_share,
-        two_stage_class_embed_share=args.two_stage_class_embed_share,
-        num_patterns=args.num_patterns,
-        dn_number=0,
-        dn_box_noise_scale=args.dn_box_noise_scale,
-        dn_label_noise_ratio=args.dn_label_noise_ratio,
-        dn_labelbook_size=dn_labelbook_size,
-        text_encoder_type=args.text_encoder_type,
-        sub_sentence_present=sub_sentence_present,
-        max_text_len=args.max_text_len,
-    )
-
-    matcher = build_matcher(args)
 
     # prepare weight dict
-    weight_dict = {"loss_ce": args.cls_loss_coef, "loss_bbox": args.bbox_loss_coef}
-    weight_dict["loss_giou"] = args.giou_loss_coef
-    clean_weight_dict_wo_dn = copy.deepcopy(weight_dict)
-
+    weight_dict = {
+        "loss_ce": args.cls_loss_coef,  # 5.0
+        "loss_bbox": args.bbox_loss_coef,  # 1.0
+        "loss_giou": args.giou_loss_coef,  # 0.0
+    }
     clean_weight_dict = copy.deepcopy(weight_dict)
 
-    # TODO this is a hack
     if args.aux_loss:
         aux_weight_dict = {}
-        for i in range(args.dec_layers - 1):
+        # {k}_{0..4} for k in weight_dict
+        for i in range(args.dec_layers - 1):  # dec_layers = 6
             aux_weight_dict.update(
                 {k + f"_{i}": v for k, v in clean_weight_dict.items()}
             )
         weight_dict.update(aux_weight_dict)
 
-    if args.two_stage_type != "no":
-        interm_weight_dict = {}
-        try:
-            no_interm_box_loss = args.no_interm_box_loss
-        except:
-            no_interm_box_loss = False
-        _coeff_weight_dict = {
-            "loss_ce": 1.0,
-            "loss_bbox": 1.0 if not no_interm_box_loss else 0.0,
-            "loss_giou": 1.0 if not no_interm_box_loss else 0.0,
-        }
-        try:
-            interm_loss_coef = args.interm_loss_coef
-        except:
-            interm_loss_coef = 1.0
-        interm_weight_dict.update(
-            {
-                k + f"_interm": v * interm_loss_coef * _coeff_weight_dict[k]
-                for k, v in clean_weight_dict_wo_dn.items()
-            }
-        )
-        weight_dict.update(interm_weight_dict)
-
-    # losses = ['labels', 'boxes', 'cardinality']
-    losses = ["labels", "boxes"]
-
-    criterion = SetCriterion(
-        matcher=matcher,
-        weight_dict=weight_dict,
-        focal_alpha=args.focal_alpha,
-        focal_gamma=args.focal_gamma,
-        losses=losses,
+    # Built Backbone according to config:
+    # Joiner(
+    #     SwinTransformer(
+    #         pretrain_img_size=384,
+    #         out_indices=[1,2,3],
+    #         dilation=False,
+    #         use_checkpoint=True,
+    #         embed_dim=192,
+    #         depths=[2, 2, 18, 2],
+    #         num_heads=[6, 12, 24, 48],
+    #         window_size=12
+    #     ),
+    #     PositionEmbeddingSineHW(128, 20, 20, True)
+    # )
+    #
+    # Built Transformer according to config
+    # Transformer(
+    #     d_model=args.hidden_dim,                                 # 256
+    #     dropout=args.dropout,                                    # 0.0
+    #     nhead=args.nheads,                                       # 8
+    #     dim_feedforward=args.dim_feedforward,                    # 2048
+    #     num_encoder_layers=args.enc_layers,                      # 6
+    #     num_decoder_layers=args.dec_layers,                      # 6
+    #     normalize_before=args.pre_norm,                          # False
+    #     num_queries=args.num_queries,                            # 900
+    #     return_intermediate_dec=True,                            # True
+    #     query_dim=args.query_dim,                                # 4
+    #     activation=args.transformer_activation,                  # ReLU
+    #     num_patterns=args.num_patterns,                          # 0
+    #     num_feature_levels=args.num_feature_levels,              # 4
+    #     enc_n_points=args.enc_n_points,                          # 4
+    #     dec_n_points=args.dec_n_points,                          # 4
+    #     learnable_tgt_init=True,                                 # True
+    #     # two stage                                              # ------Separator: Two Stage------
+    #     two_stage_type=args.two_stage_type,                      # standard # ['no', 'standard', 'early']
+    #     embed_init_tgt=args.embed_init_tgt,                      # True
+    #     use_text_enhancer=args.use_text_enhancer,                # True
+    #     use_fusion_layer=args.use_fusion_layer,                  # True
+    #     use_checkpoint=args.use_checkpoint,                      # Trye
+    #     use_transformer_ckpt=args.use_transformer_ckpt,          # True
+    #     use_text_cross_attention=args.use_text_cross_attention,  # True
+    #     text_dropout=args.text_dropout,                          # 0
+    #     fusion_dropout=args.fusion_dropout,                      # 0
+    #     fusion_droppath=args.fusion_droppath,                    # 0.1
+    # )
+    #
+    # Built matcher according to config:
+    # HungarianMatcher(
+    #     cost_class=args.set_cost_class,  # 5.0
+    #     cost_bbox=args.set_cost_bbox,    # 1.0
+    #     cost_giou=args.set_cost_giou,    # 0.0
+    #     focal_alpha=args.focal_alpha,    # 0.25
+    # )
+    return (
+        GroundingDINO(
+            build_backbone(args),
+            build_transformer(args),
+            num_queries=args.num_queries,  # 900
+            aux_loss=args.aux_loss,  # True
+            iter_update=True,  # True
+            query_dim=4,  # 4
+            num_feature_levels=args.num_feature_levels,  # 4
+            nheads=args.nheads,  # 8
+            dec_pred_bbox_embed_share=args.dec_pred_bbox_embed_share,  # True
+            two_stage_type=args.two_stage_type,  # standard
+            two_stage_bbox_embed_share=args.two_stage_bbox_embed_share,  # False
+            two_stage_class_embed_share=args.two_stage_class_embed_share,  # 900
+            num_patterns=args.num_patterns,  # 0
+            dn_number=0,  # 0
+            dn_box_noise_scale=args.dn_box_noise_scale,  # 1.0
+            dn_label_noise_ratio=args.dn_label_noise_ratio,  # 0.5
+            dn_labelbook_size=args.dn_labelbook_size,  # 91
+            text_encoder_type=args.text_encoder_type,  # bert-base-uncased
+            sub_sentence_present=args.sub_sentence_present,  # True
+            max_text_len=args.max_text_len,  # 256
+        ),
+        SetCriterion(
+            matcher=build_matcher(args),
+            weight_dict=weight_dict,  # loss weight coeffs
+            focal_alpha=args.focal_alpha,  # 0.25
+            focal_gamma=args.focal_gamma,  # 2.0
+            losses=["labels", "boxes"],
+        ).to(device),
+        {
+            "bbox": PostProcess(
+                num_select=args.num_select,  # 900
+                text_encoder_type=args.text_encoder_type,  # bert-base-uncased
+                nms_iou_threshold=args.nms_iou_threshold,  # -1
+                args=args,
+            )
+        },
     )
-    criterion.to(device)
-    postprocessors = {
-        "bbox": PostProcess(
-            num_select=args.num_select,
-            text_encoder_type=args.text_encoder_type,
-            nms_iou_threshold=args.nms_iou_threshold,
-            args=args,
-        )
-    }
-
-    return model, criterion, postprocessors
 
 
 def create_positive_map(tokenized, tokens_positive, cat_list, caption):
@@ -1197,7 +1210,6 @@ def create_positive_map(tokenized, tokens_positive, cat_list, caption):
             continue
         if beg_pos > end_pos:
             continue
-        # assert beg_pos is not None and end_pos is not None
         positive_map[j, beg_pos : end_pos + 1].fill_(1)
     return positive_map
 
