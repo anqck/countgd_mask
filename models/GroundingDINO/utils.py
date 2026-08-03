@@ -14,7 +14,6 @@ from torch import Tensor, nn
 
 
 def _get_clones(module, N, layer_share=False):
-    # import ipdb; ipdb.set_trace()
     if layer_share:
         return nn.ModuleList([module for i in range(N)])
     else:
@@ -248,7 +247,7 @@ def gen_sineembed_for_position(pos_tensor):
 
 
 class ContrastiveEmbed(nn.Module):
-    def __init__(self, max_text_len=256):
+    def __init__(self, max_text_len: int = 256):
         """
         Args:
             max_text_len: max length of text.
@@ -256,7 +255,9 @@ class ContrastiveEmbed(nn.Module):
         super().__init__()
         self.max_text_len = max_text_len
 
-    def forward(self, x, text_dict):
+    def forward(
+        self, x: torch.Tensor, text_dict: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
         """_summary_
 
         Args:

@@ -243,8 +243,10 @@ def generate_masks_with_special_tokens_and_transfer_map(
 ):
     """Generate attention mask between each pair of special tokens
     Args:
-        input_ids (torch.Tensor): input ids. Shape: [bs, num_token]
-        special_tokens_mask (list): special tokens mask.
+        tokenized (BatchEncoding | dict[str, Any]): Tokenized representation of input
+            sequence, containing `input_ids` key/attribute. Shape: [bs, num_token]
+        special_tokens_list (list): special tokens list.
+        tokenizer (PretrainedTokenizer)
     Returns:
         torch.Tensor: attention mask between each special tokens.
     """

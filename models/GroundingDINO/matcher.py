@@ -254,7 +254,7 @@ class SimpleMinsumMatcher(nn.Module):
 
 def build_matcher(args):
     assert args.matcher_type in ["HungarianMatcher", "SimpleMinsumMatcher"], (
-        "Unknown args.matcher_type: {}".format(args.matcher_type)
+        f"Unknown args.matcher_type: {args.matcher_type}"
     )
     if args.matcher_type == "HungarianMatcher":
         return HungarianMatcher(
@@ -271,6 +271,4 @@ def build_matcher(args):
             focal_alpha=args.focal_alpha,
         )
     else:
-        raise NotImplementedError(
-            "Unknown args.matcher_type: {}".format(args.matcher_type)
-        )
+        raise NotImplementedError(f"Unknown args.matcher_type: {args.matcher_type}")

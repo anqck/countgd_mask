@@ -18,16 +18,11 @@ Copy-paste from torch.nn.Transformer with modifications:
 from typing import Optional
 
 import torch
-import torch.nn.functional as F
 from torch import Tensor, nn
 
 from .utils import (
-    MLP,
     _get_activation_fn,
     _get_clones,
-    gen_encoder_output_proposals,
-    gen_sineembed_for_position,
-    sigmoid_focal_loss,
 )
 
 
@@ -52,7 +47,6 @@ class TextTransformer(nn.Module):
 
     def forward(self, memory_text: torch.Tensor, text_attention_mask: torch.Tensor):
         """
-
         Args:
             text_attention_mask: bs, num_token
             memory_text: bs, num_token, d_model
