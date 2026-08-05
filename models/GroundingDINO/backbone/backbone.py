@@ -180,7 +180,7 @@ class Joiner(nn.Sequential):
         return out, pos
 
 
-def build_backbone(args):
+def build_backbone(args) -> Joiner:
     """
     Useful args:
         - backbone: backbone name

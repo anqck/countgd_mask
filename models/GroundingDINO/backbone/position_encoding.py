@@ -181,10 +181,10 @@ def build_position_encoding(args) -> PositionEmbeddingLearned | PositionEmbeddin
     if args.position_embedding in ("v2", "sine"):
         # TODO find a better way of exposing other arguments
         position_embedding = PositionEmbeddingSineHW(
-            N_steps,
-            temperatureH=args.pe_temperatureH,
-            temperatureW=args.pe_temperatureW,
-            normalize=True,
+            N_steps,  # 128
+            temperatureH=args.pe_temperatureH,  # 20
+            temperatureW=args.pe_temperatureW,  # 20
+            normalize=True,  # True
         )
     elif args.position_embedding in ("v3", "learned"):
         position_embedding = PositionEmbeddingLearned(N_steps)

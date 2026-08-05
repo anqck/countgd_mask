@@ -258,10 +258,10 @@ def build_matcher(args):
     )
     if args.matcher_type == "HungarianMatcher":
         return HungarianMatcher(
-            cost_class=args.set_cost_class,
-            cost_bbox=args.set_cost_bbox,
-            cost_giou=args.set_cost_giou,
-            focal_alpha=args.focal_alpha,
+            cost_class=args.set_cost_class,  # 5.0
+            cost_bbox=args.set_cost_bbox,  # 1.0
+            cost_giou=args.set_cost_giou,  # 0.0
+            focal_alpha=args.focal_alpha,  # 0.25
         )
     elif args.matcher_type == "SimpleMinsumMatcher":
         return SimpleMinsumMatcher(
