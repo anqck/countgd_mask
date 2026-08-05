@@ -1,0 +1,51 @@
+@DEFINITION
+model = MaskDINO
+backbone = ResNet-50
+matcher = HungarianMatcher
+segmentation head = MaskDINOHead
+transformer_decoder = decoder = MaskDINODecoder
+pixel_decoder = encoder = MaskDINOEncoder
+criterion = SetCriterion
+images-batch = list
+targets = any
+null =
+in-training = bool
+
+@FLOW
+model[backbone, segmentation head[encoder, decoder], matcher, criterion]
+images-batch -> model ->
+
+backbone -> segmentation_head -> encoder -> decoder => outputs.{pred_logits, pred_masks, pred_boxes}
+            segmentation_head ->[in-training?] criterion => losses
+
+@DETAILS
+model/1 => losses[in-training?], ("instances" -> `mask`)[~(in-training?)]:
+	- images-batch
+
+backbone/1 => backbone-features:
+	- images-batch
+
+segmentation_head/3 => (outputs, mask_dict[in-training?])
+	- backbone-features,
+	- null
+	- targets[in-training?]
+
+encoder/2 => (mask-features, [ignored], multiscale-features):
+	- backbone features,
+	- null
+
+decoder/4 -> prediction:
+	- multiscale-features
+	- mask-features
+	- null
+	- targets[in-training?]
+
+criterion/3 -> "losses":
+	- "outputs"
+	- targets
+	- mask_dict
+
+@FINAL[~(in-training?)]
+outputs.pred_masks -> []sem_seg_post_process    => outputs.pred_masks
+outputs.pred_boxes -> [model]box_postprocess    => outputs.pred_boxes
+outputs.*          -> [model]instance_inference => instance_r

@@ -1,0 +1,99 @@
+def build_transformer(args) -> Transformer:
+    return Transformer(
+        d_model=args.hidden_dim,                                 # 256
+        dropout=args.dropout,                                    # 0.0
+        nhead=args.nheads,                                       # 8
+        dim_feedforward=args.dim_feedforward,                    # 2048
+        num_encoder_layers=args.enc_layers,                      # 6
+        num_decoder_layers=args.dec_layers,                      # 6
+        normalize_before=args.pre_norm,                          # False
+        num_queries=args.num_queries,                            # 900
+        return_intermediate_dec=True,                            # True
+        query_dim=args.query_dim,                                # 4
+        activation=args.transformer_activation,                  # ReLU
+        num_patterns=args.num_patterns,                          # 0
+        num_feature_levels=args.num_feature_levels,              # 4
+        enc_n_points=args.enc_n_points,                          # 4
+        dec_n_points=args.dec_n_points,                          # 4
+        learnable_tgt_init=True,                                 # True
+        # two stage                                              # ------Separator: Two Stage------
+        two_stage_type=args.two_stage_type,                      # standard # ['no', 'standard', 'early']
+        embed_init_tgt=args.embed_init_tgt,                      # True
+        use_text_enhancer=args.use_text_enhancer,                # True
+        use_fusion_layer=args.use_fusion_layer,                  # True
+        use_checkpoint=args.use_checkpoint,                      # Trye
+        use_transformer_ckpt=args.use_transformer_ckpt,          # True
+        use_text_cross_attention=args.use_text_cross_attention,  # True
+        text_dropout=args.text_dropout,                          # 0
+        fusion_dropout=args.fusion_dropout,                      # 0
+        fusion_droppath=args.fusion_droppath,                    # 0.1
+    )
+
+# swin_B_384_22k
+SwinTransformer(
+    pretrain_img_size=384,
+    out_indices=[1,2,3],
+    dilation=False,
+    use_checkpoint=True,
+    embed_dim=192,
+    depths=[2, 2, 18, 2],
+    num_heads=[6, 12, 24, 48],
+    window_size=12
+)
+
+# Swin Layer * 4
+BasicLayer(
+    # dim=int(embed_dim * 2 ** i_layer),
+    dim=num_features[i_layer],
+    depth=depths[i_layer],
+    num_heads=num_heads[i_layer],
+    window_size=window_size,
+    mlp_ratio=mlp_ratio,
+    qkv_bias=qkv_bias,
+    qk_scale=qk_scale,
+    drop=drop_rate,
+    attn_drop=attn_drop_rate,
+    drop_path=dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
+    norm_layer=norm_layer,
+    # downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
+    downsample=downsamplelist[i_layer],
+    use_checkpoint=use_checkpoint,
+)
+
+GroundingDINO(
+    SwinTransformer(...),
+    build_transformer(...),
+    num_queries=args.num_queries,                                  # 900
+    aux_loss=args.aux_loss,                                        # True
+    iter_update=True,                                              # True
+    query_dim=4,                                                   # 4
+    num_feature_levels=args.num_feature_levels,                    # 4
+    nheads=args.nheads,                                            # 8
+    dec_pred_bbox_embed_share=dec_pred_bbox_embed_share,           # True
+    two_stage_type=args.two_stage_type,                            # standard
+    two_stage_bbox_embed_share=args.two_stage_bbox_embed_share,    # False
+    two_stage_class_embed_share=args.two_stage_class_embed_share,  # 900
+    num_patterns=args.num_patterns,                                # 0
+    dn_number=0,                                                   # 0
+    dn_box_noise_scale=args.dn_box_noise_scale,                    # 1.0
+    dn_label_noise_ratio=args.dn_label_noise_ratio,                # 0.5
+    dn_labelbook_size=dn_labelbook_size,                           # 91
+    text_encoder_type=args.text_encoder_type,                      # bert-base-uncased
+    sub_sentence_present=sub_sentence_present,                     # True
+    max_text_len=args.max_text_len,                                # 256
+)
+
+HungarianMatcher(
+    cost_class=args.set_cost_class,  # 5.0
+    cost_bbox=args.set_cost_bbox,    # 1.0
+    cost_giou=args.set_cost_giou,    # 0.0
+    focal_alpha=args.focal_alpha,    # 0.25
+)
+
+criterion = SetCriterion(
+    matcher=matcher,
+    weight_dict=weight_dict,
+    focal_alpha=args.focal_alpha,    # 0.25
+    focal_gamma=args.focal_gamma,    # 2.0
+    losses=losses,                   # ["labels", "boxes"]
+)

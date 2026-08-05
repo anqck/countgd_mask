@@ -173,9 +173,7 @@ class MultiScaleDeformableAttention(nn.Module):
         super().__init__()
         if embed_dim % num_heads != 0:
             raise ValueError(
-                "embed_dim must be divisible by num_heads, but got {} and {}".format(
-                    embed_dim, num_heads
-                )
+                f"embed_dim must be divisible by num_heads, but got {embed_dim} and {num_heads}"
             )
         head_dim = embed_dim // num_heads
 
@@ -191,9 +189,10 @@ class MultiScaleDeformableAttention(nn.Module):
 
         self.im2col_step = img2col_step
         self.embed_dim = embed_dim
-        self.num_heads = num_heads
         self.num_levels = num_levels
+        self.num_heads = num_heads
         self.num_points = num_points
+
         self.sampling_offsets = nn.Linear(
             embed_dim, num_heads * num_levels * num_points * 2
         )
@@ -246,14 +245,14 @@ class MultiScaleDeformableAttention(nn.Module):
     def forward(
         self,
         query: torch.Tensor,
-        key: Optional[torch.Tensor] = None,
-        value: Optional[torch.Tensor] = None,
-        query_pos: Optional[torch.Tensor] = None,
-        key_padding_mask: Optional[torch.Tensor] = None,
-        reference_points: Optional[torch.Tensor] = None,
-        spatial_shapes: Optional[torch.Tensor] = None,
-        level_start_index: Optional[torch.Tensor] = None,
-        **kwargs,
+        key: torch.Tensor | None = None,
+        value: torch.Tensor | None = None,
+        query_pos: torch.Tensor | None = None,
+        key_padding_mask: torch.Tensor | None = None,
+        reference_points: torch.Tensor | None = None,
+        spatial_shapes: torch.Tensor | None = None,
+        level_start_index: torch.Tensor | None = None,
+        **_,
     ) -> torch.Tensor:
         """Forward Function of MultiScaleDeformableAttention
 
@@ -337,9 +336,7 @@ class MultiScaleDeformableAttention(nn.Module):
             )
         else:
             raise ValueError(
-                "Last dim of reference_points must be 2 or 4, but get {} instead.".format(
-                    reference_points.shape[-1]
-                )
+                f"Last dim of reference_points must be 2 or 4, but get {reference_points.shape[-1]} instead."
             )
 
         if torch.cuda.is_available() and value.is_cuda:
@@ -386,9 +383,7 @@ def create_dummy_class(klass, dependency, message=""):
     Returns:
         class: a class object
     """
-    err = "Cannot import '{}', therefore '{}' is not available.".format(
-        dependency, klass
-    )
+    err = f"Cannot import '{dependency}', therefore '{klass}' is not available."
     if message:
         err = err + " " + message
 
@@ -417,16 +412,14 @@ def create_dummy_func(func, dependency, message=""):
     Returns:
         function: a function object
     """
-    err = "Cannot import '{}', therefore '{}' is not available.".format(
-        dependency, func
-    )
+    err = f"Cannot import '{dependency}', therefore '{func}' is not available."
     if message:
         err = err + " " + message
 
     if isinstance(dependency, (list, tuple)):
         dependency = ",".join(dependency)
 
-    def _dummy(*args, **kwargs):
+    def _dummy(*_, **__):
         raise ImportError(err)
 
     return _dummy

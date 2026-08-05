@@ -178,7 +178,7 @@ class Transformer(nn.Module):
         # for two stage
         self.two_stage_type = two_stage_type
         assert two_stage_type in ["no", "standard"], (
-            "unknown param {} of two_stage_type".format(two_stage_type)
+            f"unknown param {two_stage_type} of two_stage_type"
         )
         if two_stage_type == "standard":
             # anchor selection at the output of encoder
@@ -296,11 +296,8 @@ class Transformer(nn.Module):
         # - enc_intermediate_refpoints: None or (nenc+1, bs, nq, c) or (nenc, bs, nq, c)
         #########################################################
         text_dict["encoded_text"] = memory_text
-        # if os.environ.get("SHILONG_AMP_INFNAN_DEBUG") == '1':
-        #     if memory.isnan().any() | memory.isinf().any():
-        #         import ipdb; ipdb.set_trace()
 
-        if self.two_stage_type == "standard":  # 把encoder的输出作为proposal
+        if self.two_stage_type == "standard":
             output_memory, output_proposals = gen_encoder_output_proposals(
                 memory, mask_flatten, spatial_shapes
             )
@@ -390,9 +387,7 @@ class Transformer(nn.Module):
         #########################################################
 
         # memory  torch.Size([2, 16320, 256])
-
-        # import pdb;pdb.set_trace()
-        hs, references = self.decoder(
+        decode_results = self.decoder(
             tgt=tgt.transpose(0, 1),
             memory=memory.transpose(0, 1),
             memory_key_padding_mask=mask_flatten,
@@ -406,6 +401,9 @@ class Transformer(nn.Module):
             text_attention_mask=~text_dict["text_token_mask"],
             # we ~ the mask . False means use the token; True means pad the token
         )
+        # Enforce typing for result
+        hs = torch.Tensor(decode_results[0])
+        references = torch.Tensor(decode_results[1])
         #########################################################
         # End Decoder
         # hs: n_dec, bs, nq, d_model
@@ -577,9 +575,6 @@ class TransformerEncoder(nn.Module):
 
         # main process
         for layer_id, layer in enumerate(self.layers):
-            # if output.isnan().any() or memory_text.isnan().any():
-            #     if os.environ.get('IPDB_SHILONG_DEBUG', None) == 'INFO':
-            #         import ipdb; ipdb.set_trace()
             if self.fusion_layers:
                 if self.use_checkpoint:
                     output, memory_text = checkpoint.checkpoint(
@@ -681,14 +676,16 @@ class TransformerDecoder(nn.Module):
         # for text
         memory_text: Tensor | None = None,
         text_attention_mask: Tensor | None = None,
-    ):
+    ) -> list[list[torch.Tensor], list[torch.Tensor]]:
         """
-        Input:
+        Args:
             - tgt: nq, bs, d_model
             - memory: hw, bs, d_model
             - pos: hw, bs, d_model
             - refpoints_unsigmoid: nq, bs, 2/4
             - valid_ratios/spatial_shapes: bs, nlevel, 2
+        Returns:
+            Tuple of [query embeddings] and [per-stage anchor box]
         """
         output = tgt
 

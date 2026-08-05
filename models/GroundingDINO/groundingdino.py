@@ -182,7 +182,7 @@ class GroundingDINO(nn.Module):
         nn.init.constant_(_bbox_embed.layers[-1].weight.data, 0)  # ty: ignore[invalid-argument-type]
         nn.init.constant_(_bbox_embed.layers[-1].bias.data, 0)  # ty: ignore[invalid-argument-type]
 
-        # True
+        # dec_pred_bbox_embed_share=True
         if dec_pred_bbox_embed_share:
             self.bbox_embed = nn.ModuleList(
                 [_bbox_embed] * transformer.num_decoder_layers

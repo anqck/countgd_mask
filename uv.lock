@@ -20,7 +20,7 @@ wheels = [
 [[package]]
 name = "certifi"
 version = "2022.12.7"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 wheels = [
     { url = "https://download.pytorch.org/whl/certifi-2022.12.7-py3-none-any.whl", hash = "sha256:4ad3232f5e926d6718ec31cfc1fcadfde020920e278684144551c91769c7bc18", upload-time = "2023-10-03T17:33:19Z" },
 ]
@@ -28,7 +28,7 @@ wheels = [
 [[package]]
 name = "charset-normalizer"
 version = "2.1.1"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 wheels = [
     { url = "https://download.pytorch.org/whl/charset_normalizer-2.1.1-py3-none-any.whl", hash = "sha256:83e9a75d1911279afd89352c68b45348559d1fc0506b054b346651b5e7fee29f", upload-time = "2023-10-03T17:33:19Z" },
 ]
@@ -45,7 +45,7 @@ wheels = [
 [[package]]
 name = "colorama"
 version = "0.4.6"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 wheels = [
     { url = "https://download.pytorch.org/whl/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", upload-time = "2023-10-05T23:50:34Z" },
 ]
@@ -97,8 +97,6 @@ dependencies = [
     { name = "colorlog" },
     { name = "cython" },
     { name = "numpy" },
-    { name = "nvidia-cuda-nvcc-cu12" },
-    { name = "nvidia-cuda-runtime-cu12" },
     { name = "opencv-python" },
     { name = "pycocotools" },
     { name = "pyyaml" },
@@ -125,8 +123,6 @@ requires-dist = [
     { name = "colorlog", specifier = "==6.8.2" },
     { name = "cython", specifier = "==3.0.9" },
     { name = "numpy", specifier = "==1.26.4" },
-    { name = "nvidia-cuda-nvcc-cu12", specifier = "==12.6.*" },
-    { name = "nvidia-cuda-runtime-cu12", specifier = ">=12.4.127" },
     { name = "opencv-python", specifier = "==4.9.0.80" },
     { name = "pycocotools", specifier = "==2.0.7" },
     { name = "pyyaml", specifier = "==6.0.1" },
@@ -135,9 +131,9 @@ requires-dist = [
     { name = "supervision", specifier = "==0.6.0" },
     { name = "termcolor", specifier = "==2.4.0" },
     { name = "timm", specifier = "==0.9.16" },
-    { name = "torch", specifier = "==2.6.0+cu126" },
-    { name = "torchaudio", specifier = "==2.6.0" },
-    { name = "torchvision", specifier = "==0.21.0+cu126" },
+    { name = "torch", specifier = "==2.10.0+cu130" },
+    { name = "torchaudio", specifier = "==2.10.0" },
+    { name = "torchvision", specifier = "==0.25.0+cu130" },
     { name = "transformers", specifier = "==4.39.1" },
     { name = "yapf", specifier = "==0.40.1" },
 ]
@@ -168,7 +164,7 @@ wheels = [
 [[package]]
 name = "filelock"
 version = "3.29.0"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 sdist = { url = "https://files.pythonhosted.org/packages/b5/fe/997687a931ab51049acce6fa1f23e8f01216374ea81374ddee763c493db5/filelock-3.29.0.tar.gz", hash = "sha256:69974355e960702e789734cb4871f884ea6fe50bd8404051a3530bc07809cf90" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/47/dd9a212ef6e343a6857485ffe25bba537304f1913bdbed446a23f7f592e1/filelock-3.29.0-py3-none-any.whl", hash = "sha256:96f5f6344709aa1572bbf631c640e4ebeeb519e08da902c39a001882f30ac258" },
@@ -194,7 +190,7 @@ wheels = [
 [[package]]
 name = "fsspec"
 version = "2026.4.0"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 sdist = { url = "https://files.pythonhosted.org/packages/d5/8d/1c51c094345df128ca4a990d633fe1a0ff28726c9e6b3c41ba65087bba1d/fsspec-2026.4.0.tar.gz", hash = "sha256:301d8ac70ae90ef3ad05dcf94d6c3754a097f9b5fe4667d2787aa359ec7df7e4" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d5/0c/043d5e551459da400957a1395e0febbf771446ff34291afcbe3d8be2a279/fsspec-2026.4.0-py3-none-any.whl", hash = "sha256:11ef7bb35dab8a394fde6e608221d5cf3e8499401c249bebaeaad760a1a8dec2" },
@@ -234,7 +230,7 @@ wheels = [
 [[package]]
 name = "idna"
 version = "3.4"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 wheels = [
     { url = "https://download.pytorch.org/whl/idna-3.4-py3-none-any.whl", hash = "sha256:90b77e79eaa3eba6de819a0c442c0b4ceefc341a7a2ab77d7562bf49f425c5c2", upload-time = "2023-10-06T21:35:40Z" },
 ]
@@ -242,7 +238,7 @@ wheels = [
 [[package]]
 name = "importlib-metadata"
 version = "7.1.0"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 dependencies = [
     { name = "zipp" },
 ]
@@ -253,7 +249,7 @@ wheels = [
 [[package]]
 name = "jinja2"
 version = "3.1.6"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 dependencies = [
     { name = "markupsafe" },
 ]
@@ -282,7 +278,7 @@ wheels = [
 [[package]]
 name = "markupsafe"
 version = "3.0.3"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 wheels = [
     { url = "https://download.pytorch.org/whl/markupsafe-3.0.3-cp312-cp312-win_amd64.whl", upload-time = "2026-03-27T13:54:35Z" },
     { url = "https://download.pytorch.org/whl/markupsafe-3.0.3-cp313-cp313-win_amd64.whl", upload-time = "2026-03-27T13:54:39Z" },
@@ -323,7 +319,7 @@ wheels = [
 [[package]]
 name = "mpmath"
 version = "1.3.0"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 sdist = { url = "https://files.pythonhosted.org/packages/e0/47/dd32fa426cc72114383ac549964eecb20ecfd886d1e5ccf5340b55b02f57/mpmath-1.3.0.tar.gz", hash = "sha256:7a28eb2a9774d00c7bc92411c19a89209d5da7c4c9a9e227be8330a23a25b91f" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl", hash = "sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c" },
@@ -332,7 +328,7 @@ wheels = [
 [[package]]
 name = "networkx"
 version = "3.6.1"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 sdist = { url = "https://files.pythonhosted.org/packages/6a/51/63fe664f3908c97be9d2e4f1158eb633317598cfa6e1fc14af5383f17512/networkx-3.6.1.tar.gz", hash = "sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/c9/b2622292ea83fbb4ec318f5b9ab867d0a28ab43c5717bb85b0a5f6b3b0a4/networkx-3.6.1-py3-none-any.whl", hash = "sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762" },
@@ -341,27 +337,11 @@ wheels = [
 [[package]]
 name = "numpy"
 version = "1.26.4"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 sdist = { url = "https://files.pythonhosted.org/packages/65/6e/09db70a523a96d25e115e71cc56a6f9031e7b8cd166c1ac8438307c14058/numpy-1.26.4.tar.gz", hash = "sha256:2a02aba9ed12e4ac4eb3ea9421c420301a0c6460d9830d74a9df87efa4912010" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/28/4a/46d9e65106879492374999e76eb85f87b15328e06bd1550668f79f7b18c6/numpy-1.26.4-cp312-cp312-win32.whl", hash = "sha256:50193e430acfc1346175fcbdaa28ffec49947a06918b7b92130744e81e640110" },
     { url = "https://files.pythonhosted.org/packages/16/2e/86f24451c2d530c88daf997cb8d6ac622c1d40d19f5a031ed68a4b73a374/numpy-1.26.4-cp312-cp312-win_amd64.whl", hash = "sha256:08beddf13648eb95f8d867350f6a018a4be2e5ad54c8d8caed89ebca558b2818" },
-]
-
-[[package]]
-name = "nvidia-cuda-nvcc-cu12"
-version = "12.6.85"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/59/bc/5f6745117f21a2e3b19d4acbb9acca57f9b599aad6ee229c6712cb0c4d84/nvidia_cuda_nvcc_cu12-12.6.85-py3-none-win_amd64.whl", hash = "sha256:aa04742337973dcb5bcccabb590edc8834c60ebfaf971847888d24ffef6c46b5", size = 16812838, upload-time = "2024-11-20T17:48:41.023Z" },
-]
-
-[[package]]
-name = "nvidia-cuda-runtime-cu12"
-version = "12.4.127"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
-wheels = [
-    { url = "https://pypi.nvidia.com/nvidia-cuda-runtime-cu12/nvidia_cuda_runtime_cu12-12.4.127-py3-none-win_amd64.whl", hash = "sha256:09c2e35f48359752dfa822c09918211844a3d93c100a715d79b59591130c5e1e" },
 ]
 
 [[package]]
@@ -380,7 +360,7 @@ wheels = [
 [[package]]
 name = "packaging"
 version = "24.1"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 wheels = [
     { url = "https://download.pytorch.org/whl/packaging-24.1-py3-none-any.whl", hash = "sha256:5b8f2217dbdbd2f7f384c41c628544e6d52f2d0f53c6d0c3ea61aa5d1d7ff124", upload-time = "2024-10-29T23:48:01Z" },
 ]
@@ -388,7 +368,7 @@ wheels = [
 [[package]]
 name = "pillow"
 version = "12.2.0"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 sdist = { url = "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz", hash = "sha256:a830b1a40919539d07806aa58e1b114df53ddd43213d9c8b75847eee6c0182b5" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/42/025cfe05d1be22dbfdb4f264fe9de1ccda83f66e4fc3aac94748e784af04/pillow-12.2.0-cp312-cp312-win32.whl", hash = "sha256:58f62cc0f00fd29e64b29f4fd923ffdb3859c9f9e6105bfc37ba1d08994e8940" },
@@ -499,7 +479,7 @@ wheels = [
 [[package]]
 name = "requests"
 version = "2.28.1"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 dependencies = [
     { name = "certifi" },
     { name = "charset-normalizer" },
@@ -536,7 +516,7 @@ wheels = [
 [[package]]
 name = "setuptools"
 version = "78.1.0"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 sdist = { url = "https://download.pytorch.org/whl/setuptools-78.1.0.tar.gz", upload-time = "2026-07-08T13:15:22Z" }
 wheels = [
     { url = "https://download.pytorch.org/whl/setuptools-78.1.0-py3-none-any.whl", upload-time = "2026-07-08T13:15:22Z" },
@@ -580,14 +560,14 @@ wheels = [
 
 [[package]]
 name = "sympy"
-version = "1.13.1"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+version = "1.13.3"
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 dependencies = [
     { name = "mpmath" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ca/99/5a5b6f19ff9f083671ddf7b9632028436167cd3d33e11015754e41b249a4/sympy-1.13.1.tar.gz", hash = "sha256:9cebf7e04ff162015ce31c9c6c9144daa34a93bd082f54fd8f12deca4f47515f" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/8a/5a7fd6284fa8caac23a26c9ddf9c30485a48169344b4bd3b0f02fef1890f/sympy-1.13.3.tar.gz", hash = "sha256:b27fd2c6530e0ab39e275fc9b683895367e51d5da91baa8d3d64db2565fec4d9" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/fe/81695a1aa331a842b582453b605175f419fe8540355886031328089d840a/sympy-1.13.1-py3-none-any.whl", hash = "sha256:db36cdc64bf61b9b24578b6f7bab1ecdd2452cf008f34faa33776680c26d66f8" },
+    { url = "https://files.pythonhosted.org/packages/99/ff/c87e0622b1dadea79d2fb0b25ade9ed98954c9033722eb707053d310d4f3/sympy-1.13.3-py3-none-any.whl", hash = "sha256:54612cf55a62755ee71824ce692986f23c88ffa77207b30c1368eda4a7060f73" },
 ]
 
 [[package]]
@@ -651,8 +631,8 @@ wheels = [
 
 [[package]]
 name = "torch"
-version = "2.6.0+cu126"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+version = "2.10.0+cu130"
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 dependencies = [
     { name = "filelock" },
     { name = "fsspec" },
@@ -663,40 +643,49 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cu126/torch-2.6.0%2Bcu126-cp312-cp312-win_amd64.whl", hash = "sha256:b10c39c83e5d1afd639b5c9f5683b351e97e41390a93f59c59187004a9949924", upload-time = "2025-01-30T01:24:02Z" },
-    { url = "https://download-r2.pytorch.org/whl/cu126/torch-2.6.0%2Bcu126-cp313-cp313-win_amd64.whl", hash = "sha256:a1ce724eb9813fcd05b99cb8b652b2d02f447caba65f1469abd7d50af5e5323f", upload-time = "2025-01-30T01:28:28Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.10.0%2Bcu130-cp312-cp312-win_amd64.whl", hash = "sha256:224649fa0ab181ec483cc368e3303dda1760e4ba31bea806b88979f855436aaa", upload-time = "2026-01-21T19:00:27Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.10.0%2Bcu130-cp313-cp313-win_amd64.whl", hash = "sha256:48af94af745a9dd9b42be81ea15b56aba981666bcfe10394dceca6d9476a50fa", upload-time = "2026-01-21T19:00:27Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.10.0%2Bcu130-cp313-cp313t-win_amd64.whl", hash = "sha256:b38e5b505b015903a51c2b3f12e50a9f152f92fe7e3992e79f504138cf90601d", upload-time = "2026-01-21T19:01:32Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.10.0%2Bcu130-cp314-cp314-win_amd64.whl", hash = "sha256:dda35d473dd34cafa0668be176b9ad2cb69b1ff570d0336715a6541e89e27640", upload-time = "2026-01-21T19:00:26Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.10.0%2Bcu130-cp314-cp314t-win_amd64.whl", hash = "sha256:d5ea18790a18b660d655f6e75a8ca6e8d6298b55fc338f8c921764b94c886743", upload-time = "2026-01-21T19:01:35Z" },
 ]
 
 [[package]]
 name = "torchaudio"
-version = "2.6.0+cu126"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+version = "2.10.0+cu130"
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 dependencies = [
     { name = "torch" },
 ]
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cu126/torchaudio-2.6.0%2Bcu126-cp312-cp312-win_amd64.whl", hash = "sha256:144b286d2f6195ba8d75ed1a568bddd718d032d54d1bf94940d47730c6321a0b", upload-time = "2025-01-30T01:36:52Z" },
-    { url = "https://download-r2.pytorch.org/whl/cu126/torchaudio-2.6.0%2Bcu126-cp313-cp313-win_amd64.whl", hash = "sha256:9d8c809b18101214fbc7e0c03eaa3de535d82562f3303c3293bddc42bb9dc7e8", upload-time = "2025-01-30T01:36:53Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torchaudio-2.10.0%2Bcu130-cp312-cp312-win_amd64.whl", hash = "sha256:267c6724da81b9f0773c4707079f8e92b31fc95bf543845fb06ef9b5fdce99b0", upload-time = "2026-01-21T15:05:51Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torchaudio-2.10.0%2Bcu130-cp313-cp313-win_amd64.whl", hash = "sha256:3909d4e9065f30a06e0885dc2a3bda9448859544306b13487212e0eae80231d3", upload-time = "2026-01-21T15:05:51Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torchaudio-2.10.0%2Bcu130-cp313-cp313t-win_amd64.whl", hash = "sha256:faefe3fad2abd5735d437df44d440efeeb4256cd76c4cc7872906c5d7867f17e", upload-time = "2026-01-21T15:05:51Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torchaudio-2.10.0%2Bcu130-cp314-cp314-win_amd64.whl", hash = "sha256:de12617c42479a56afaac4dca8374148ee070178f5dbcd44d2a838f4fdecdc80", upload-time = "2026-01-21T15:05:51Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torchaudio-2.10.0%2Bcu130-cp314-cp314t-win_amd64.whl", hash = "sha256:be34bd71859abea68a54c92a7bc8c46521a72f3ff666f0cdaf1e8483f1b4d087", upload-time = "2026-01-21T15:05:51Z" },
 ]
 
 [[package]]
 name = "torchvision"
-version = "0.21.0+cu126"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+version = "0.25.0+cu130"
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 dependencies = [
     { name = "numpy" },
     { name = "pillow" },
     { name = "torch" },
 ]
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cu126/torchvision-0.21.0%2Bcu126-cp312-cp312-win_amd64.whl", hash = "sha256:600c18579cd6eae8f6bbfcc43a088bc512bfde1fa4de0587a4db1d44eaf411f9", upload-time = "2025-01-30T01:36:58Z" },
-    { url = "https://download-r2.pytorch.org/whl/cu126/torchvision-0.21.0%2Bcu126-cp313-cp313-win_amd64.whl", hash = "sha256:1112ebe400eca7af30060909ceec422708b2bb5ce470489c5ffb5cf93664779b", upload-time = "2025-01-30T01:36:59Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torchvision-0.25.0%2Bcu130-cp312-cp312-win_amd64.whl", hash = "sha256:7dd245ee7df0ceb00125e57615de31ca7232bf046143c2c3fe7a3b321bb50958", upload-time = "2026-01-21T22:34:45Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torchvision-0.25.0%2Bcu130-cp313-cp313-win_amd64.whl", hash = "sha256:f4ac532eee577ce712fb013e16da0174567f59fa472256e2aa37197e0117e7c5", upload-time = "2026-01-21T22:34:47Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torchvision-0.25.0%2Bcu130-cp313-cp313t-win_amd64.whl", hash = "sha256:d3cb744887e59513a6408bb24870b6259787997b3eea23b5281716bb14aa7da9", upload-time = "2026-01-21T22:34:49Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torchvision-0.25.0%2Bcu130-cp314-cp314-win_amd64.whl", hash = "sha256:6ec12923ff773c800f1197d8cb5f50febc5bc209ad8a3ea3021dda0f6b62c520", upload-time = "2026-01-21T22:34:52Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torchvision-0.25.0%2Bcu130-cp314-cp314t-win_amd64.whl", hash = "sha256:de5b0fdbe0766926d7f3814fce286e3bde10d7c8dd5a85bcc2f6e87578ebf303", upload-time = "2026-01-21T22:34:55Z" },
 ]
 
 [[package]]
 name = "tqdm"
 version = "4.66.5"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 dependencies = [
     { name = "colorama" },
 ]
@@ -728,7 +717,7 @@ wheels = [
 [[package]]
 name = "typing-extensions"
 version = "4.15.0"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 wheels = [
     { url = "https://download.pytorch.org/whl/typing_extensions-4.15.0-py3-none-any.whl" },
 ]
@@ -736,7 +725,7 @@ wheels = [
 [[package]]
 name = "urllib3"
 version = "1.26.13"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 wheels = [
     { url = "https://download.pytorch.org/whl/urllib3-1.26.13-py2.py3-none-any.whl", hash = "sha256:47cc05d99aaa09c9e72ed5809b60e7ba354e64b59c9c173ac3018642d8bb41fc", upload-time = "2023-10-06T21:48:51Z" },
 ]
@@ -758,7 +747,7 @@ wheels = [
 [[package]]
 name = "zipp"
 version = "3.19.2"
-source = { registry = "https://download.pytorch.org/whl/cu126" }
+source = { registry = "https://download.pytorch.org/whl/cu130" }
 wheels = [
     { url = "https://download.pytorch.org/whl/zipp-3.19.2-py3-none-any.whl", upload-time = "2025-08-05T22:17:38Z" },
 ]
