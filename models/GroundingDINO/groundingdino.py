@@ -472,7 +472,7 @@ class GroundingDINO(nn.Module):
 
         features: list[NestedTensor]
         poss: list[torch.Tensor]
-        features, poss = self.backbone(samples)
+        features, layer0, poss = self.backbone(samples)
         combined_features = self.combine_features(features)
 
         # Get visual exemplar tokens.
@@ -524,7 +524,14 @@ class GroundingDINO(nn.Module):
 
         input_query_bbox = input_query_label = attn_mask = dn_meta = None
         hs, reference, hs_enc, ref_enc, init_box_proposal = self.transformer(
-            srcs, masks, input_query_bbox, poss, input_query_label, attn_mask, text_dict
+            srcs,
+            masks,
+            input_query_bbox,
+            poss,
+            input_query_label,
+            attn_mask,
+            text_dict,
+            backbone_layer_0=layer0,
         )
 
         # deformable-detr-like anchor update
@@ -1105,7 +1112,8 @@ def build_groundingdino(
     #     ),
     #     PositionEmbeddingSineHW(128, 20, 20, True)
     # )
-    #
+    backbone = build_backbone(args)
+    args.backbone_layer0_channels = backbone[0].embed_dim
     # Built Transformer according to config
     # Transformer(
     #     d_model=args.hidden_dim,                                 # 256
@@ -1146,7 +1154,7 @@ def build_groundingdino(
     # )
     return (
         GroundingDINO(
-            build_backbone(args),
+            backbone,
             build_transformer(args),
             num_queries=args.num_queries,  # 900
             aux_loss=args.aux_loss,  # True

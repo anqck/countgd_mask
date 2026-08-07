@@ -113,7 +113,14 @@ class BackboneBase(nn.Module):
         self.body = IntermediateLayerGetter(backbone, return_layers=return_layers)
         self.num_channels = num_channels
 
-    def forward(self, tensor_list: NestedTensor) -> dict[str, NestedTensor]:
+        if isinstance(self.num_channels, int):
+            self.embed_dim = self.num_channels
+        else:
+            self.embed_dim = self.num_channels[0]
+
+    def forward(
+        self, tensor_list: NestedTensor
+    ) -> tuple[dict[str, NestedTensor], torch.Tensor]:
         xs = self.body(tensor_list.tensors)
         out: dict[str, NestedTensor] = {}
         for name, x in xs.items():
@@ -121,7 +128,7 @@ class BackboneBase(nn.Module):
             assert m is not None
             mask = F.interpolate(m[None].float(), size=x.shape[-2:]).to(torch.bool)[0]
             out[name] = NestedTensor(x, mask)
-        return out
+        return out, xs[0]
 
 
 class Backbone(BackboneBase):
@@ -166,10 +173,12 @@ class Joiner(nn.Sequential):
 
     def forward(
         self, tensor_list: NestedTensor
-    ) -> tuple[list[NestedTensor], list[torch.Tensor]]:  # ty: ignore[invalid-method-override]
+    ) -> tuple[list[NestedTensor], torch.Tensor, list[torch.Tensor]]:  # ty: ignore[invalid-method-override]
         backbone: Backbone | SwinTransformer = self[0]
         pos_emb: PositionEmbeddingLearned | PositionEmbeddingSineHW = self[1]
-        xs: dict[int | str, NestedTensor] = backbone(tensor_list)
+        xs: dict[int | str, NestedTensor]
+        layer0: torch.Tensor
+        xs, layer0 = backbone(tensor_list)
         out: list[NestedTensor] = []
         pos: list[torch.Tensor] = []
         for x in xs.values():
@@ -177,7 +186,7 @@ class Joiner(nn.Sequential):
             # position encoding
             pos.append(pos_emb(x).to(x.tensors.dtype))
 
-        return out, pos
+        return out, layer0, pos
 
 
 def build_backbone(args) -> Joiner:
@@ -206,7 +215,6 @@ def build_backbone(args) -> Joiner:
             batch_norm=FrozenBatchNorm2d,
         )
         bb_num_channels = backbone.num_channels
-        assert isinstance(bb_num_channels, list)
     elif args.backbone in [
         "swin_T_224_1k",
         "swin_B_224_22k",

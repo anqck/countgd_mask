@@ -20,6 +20,8 @@ from typing import Optional
 
 import torch
 from torch import Tensor, nn
+from torch.nn import Conv2d
+from torch.nn import functional as F
 from torch.utils import checkpoint
 
 from groundingdino.util.misc import inverse_sigmoid
@@ -71,6 +73,11 @@ class Transformer(nn.Module):
         text_dropout=0.1,
         fusion_dropout=0.1,
         fusion_droppath=0.0,
+        # for mask
+        generate_mask: bool = False,
+        mask_dim: int | None = None,
+        conv_dim: int | None = None,
+        backbone_layer0_channels: int | None = None,
     ):
         super().__init__()
         self.num_feature_levels = num_feature_levels
@@ -138,7 +145,7 @@ class Transformer(nn.Module):
             use_text_cross_attention=use_text_cross_attention,
         )
 
-        decoder_norm = nn.LayerNorm(d_model)
+        self.decoder_norm = decoder_norm = nn.LayerNorm(d_model)
         self.decoder = TransformerDecoder(
             decoder_layer,
             num_decoder_layers,
@@ -192,6 +199,41 @@ class Transformer(nn.Module):
         self.enc_out_class_embed = None
         self.enc_out_bbox_embed = None
 
+        # Mask branch
+        self.generate_mask = generate_mask
+        if self.generate_mask:
+            assert mask_dim is not None
+            assert conv_dim is not None
+            assert backbone_layer0_channels is not None
+            # Post-Encoder
+            self.mask_features = Conv2d(
+                conv_dim, mask_dim, kernel_size=1, stride=1, padding=0
+            )
+            # 32 is magic number
+            self.feature_lateral_norm = nn.GroupNorm(32, conv_dim)
+            self.feature_output_norm = nn.GroupNorm(32, conv_dim)
+            self.feature_lateral_conv = nn.Conv2d(
+                in_channels=backbone_layer0_channels,
+                out_channels=conv_dim,
+                kernel_size=1,
+                bias=False,
+            )
+            self.feature_output_conv = nn.Conv2d(
+                in_channels=conv_dim,
+                out_channels=conv_dim,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+            )
+            # Post-Decoder
+            self.mask_embed = MLP(
+                input_dim=d_model,
+                hidden_dim=d_model,
+                output_dim=mask_dim,
+                num_layers=3,
+            )
+
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -203,6 +245,14 @@ class Transformer(nn.Module):
                 m._reset_parameters()
         if self.num_feature_levels > 1 and self.level_embed is not None:
             nn.init.normal_(self.level_embed)
+        if self.generate_mask:
+            nn.init.kaiming_normal_(self.mask_features.weight, a=1)
+            if self.mask_features.bias is not None:
+                nn.init.constant_(self.mask_features.bias, 0)
+            # We don't init bias for feature convs because they're
+            # set to False in init
+            nn.init.kaiming_normal_(self.feature_lateral_conv.weight, a=1)
+            nn.init.kaiming_normal_(self.feature_output_conv.weight, a=1)
 
     def get_valid_ratio(self, mask):
         _, H, W = mask.shape
@@ -223,8 +273,10 @@ class Transformer(nn.Module):
         refpoint_embed,
         pos_embeds,
         tgt,
-        attn_mask=None,
-        text_dict=None,
+        attn_mask: torch.Tensor | None = None,
+        text_dict: dict | None = None,
+        *,
+        backbone_layer_0: torch.Tensor | None = None,
     ):
         """
         Input:
@@ -235,6 +287,7 @@ class Transformer(nn.Module):
             - tgt: [bs, num_dn, d_model]. None in infer
 
         """
+        predict_mask: bool = (backbone_layer_0 is not None) and self.generate_mask
         # prepare input for encoder
         src_flatten = []
         mask_flatten = []
@@ -267,13 +320,10 @@ class Transformer(nn.Module):
         valid_ratios = torch.stack([self.get_valid_ratio(m) for m in masks], 1)
 
         # two stage
-        enc_topk_proposals = enc_refpoint_embed = None
-
         #########################################################
         # Begin Encoder
         #########################################################
-
-        memory, memory_text = self.encoder(
+        encoder_results = self.encoder(
             src_flatten,
             pos=lvl_pos_embed_flatten,
             level_start_index=level_start_index,
@@ -286,6 +336,34 @@ class Transformer(nn.Module):
             position_ids=text_dict["position_ids"],
             text_self_attention_masks=text_dict["text_self_attention_masks"],
         )
+        if predict_mask:
+            # According to backbone and encoder memory layout, layer0 is the most
+            # coarse feature map (stride-8)
+            memory = torch.Tensor(encoder_results[0])
+            memory_text = torch.Tensor(encoder_results[1])
+            # -> bs, c, \sum{wh}
+            mem0 = memory.transpose(1, 2)
+            split_regions: list[int] = [w * h for h, w in spatial_shapes]
+            # We're using `torch.*` functions because they have better typing annotation,
+            # which would be useful to LSPs
+            # -> ([bs, c, wh] * 4)[0]
+            mem0 = torch.split(mem0, split_regions, 2)[0]
+            # -> (bs, c, h, w) because spatial_shapes in in (h, w)
+            mem0 = torch.unflatten(mem0, 2, tuple(spatial_shapes[0]))
+
+            cur_fpn = self.feature_lateral_conv(backbone_layer_0)
+            cur_fpn = self.feature_lateral_norm(cur_fpn)
+            y = cur_fpn + F.interpolate(
+                mem0,
+                size=cur_fpn.shape[-2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+            y = self.feature_output_conv(y)
+            y = self.feature_output_norm(y)
+            y = F.relu(y)
+            # bs, c, h, w
+            mask_features: torch.Tensor = self.mask_features(y)
 
         #########################################################
         # End Encoder
@@ -373,9 +451,7 @@ class Transformer(nn.Module):
             init_box_proposal = refpoint_embed_.sigmoid()
 
         else:
-            raise NotImplementedError(
-                "unknown two_stage_type {}".format(self.two_stage_type)
-            )
+            raise NotImplementedError(f"unknown two_stage_type {self.two_stage_type}")
         #########################################################
         # End preparing tgt
         # - tgt: bs, NQ, d_model
@@ -386,7 +462,7 @@ class Transformer(nn.Module):
         # Begin Decoder
         #########################################################
 
-        # memory  torch.Size([2, 16320, 256])
+        # memory.shape=torch.Size([2, 16320, 256])
         decode_results = self.decoder(
             tgt=tgt.transpose(0, 1),
             memory=memory.transpose(0, 1),
@@ -401,14 +477,22 @@ class Transformer(nn.Module):
             text_attention_mask=~text_dict["text_token_mask"],
             # we ~ the mask . False means use the token; True means pad the token
         )
-        # Enforce typing for result
         hs = torch.Tensor(decode_results[0])
         references = torch.Tensor(decode_results[1])
         #########################################################
         # End Decoder
         # hs: n_dec, bs, nq, d_model
         # references: n_dec+1, bs, nq, query_dim
+        # predicted_masks: n_dec, bs, nq, h, w
         #########################################################
+        predicted_masks = []
+        if predict_mask:
+            for dec_layer_id, dec_output in enumerate(hs):
+                dec_output_norm = self.decoder_norm(dec_output)
+                dec_output_norm = dec_output_norm.transpose(0, 1)
+                mask_embed = self.mask_embed(dec_output_norm)
+                output_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
+                predicted_masks.append(output_mask)
 
         #########################################################
         # Begin postprocess
@@ -424,7 +508,7 @@ class Transformer(nn.Module):
         # ref_enc: (n_enc+1, bs, nq, query_dim) or (1, bs, nq, query_dim) or (n_enc, bs, nq, d_model) or None
         #########################################################
 
-        return hs, references, hs_enc, ref_enc, init_box_proposal
+        return hs, references, hs_enc, ref_enc, init_box_proposal, predicted_masks
         # hs: (n_dec, bs, nq, d_model)
         # references: sigmoid coordinates. (n_dec+1, bs, bq, 4)
         # hs_enc: (n_enc+1, bs, nq, d_model) or (1, bs, nq, d_model) or None
@@ -524,7 +608,7 @@ class TransformerEncoder(nn.Module):
         pos_text: Tensor = None,
         text_self_attention_masks: Tensor = None,
         position_ids: Tensor = None,
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Input:
             - src: [bs, sum(hi*wi), 256]
@@ -676,7 +760,7 @@ class TransformerDecoder(nn.Module):
         # for text
         memory_text: Tensor | None = None,
         text_attention_mask: Tensor | None = None,
-    ) -> list[list[torch.Tensor], list[torch.Tensor]]:
+    ) -> list[list[torch.Tensor]]:
         """
         Args:
             - tgt: nq, bs, d_model
@@ -986,4 +1070,8 @@ def build_transformer(args) -> Transformer:
         text_dropout=args.text_dropout,  # 0
         fusion_dropout=args.fusion_dropout,  # 0
         fusion_droppath=args.fusion_droppath,  # 0.1
+        generate_mask=args.generate_mask,
+        mask_dim=args.mask_dim,
+        conv_dim=args.conv_dim,
+        backbone_layer0_channels=args.backbone_layer0_channels,
     )

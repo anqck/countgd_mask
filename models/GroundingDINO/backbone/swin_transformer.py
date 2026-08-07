@@ -668,9 +668,10 @@ class SwinTransformer(nn.Module):
 
         # add a norm layer for each output
         for i_layer in out_indices:
-            layer = norm_layer(num_features[i_layer])
-            layer_name = f"norm{i_layer}"
-            self.add_module(layer_name, layer)
+            self.add_module(
+                f"norm{i_layer}",
+                norm_layer(num_features[i_layer]),
+            )
 
         self._freeze_stages()
 
@@ -738,7 +739,9 @@ class SwinTransformer(nn.Module):
         #       torch.Size([2, 768, 64, 64]), torch.Size([2, 1536, 32, 32])]
         return tuple(outs)
 
-    def forward(self, tensor_list: NestedTensor) -> dict[int, NestedTensor]:
+    def forward(
+        self, tensor_list: NestedTensor
+    ) -> tuple[dict[int, NestedTensor], torch.Tensor]:
         """
         Modified forward for NestedTensor input
 
@@ -746,7 +749,9 @@ class SwinTransformer(nn.Module):
             tensor_list (NestedTensor): Nested tensor
 
         Returns:
-            dict[int, NestedTensor]: index-mapped for each layer of Swin output
+            tuple[dict[int, NestedTensor], NestedTensor]:
+                index-mapped for each layer of Swin output
+                and layer0
         """
         # Extract input tensors
         x = tensor_list.tensors
@@ -764,7 +769,9 @@ class SwinTransformer(nn.Module):
             ]
             outs_dict[idx] = NestedTensor(out_i, mask)
 
-        return outs_dict
+        layer0 = outs[0]
+
+        return outs_dict, layer0
 
     def train(self, mode=True):
         """Convert the model into training mode while keep layers freezed."""
