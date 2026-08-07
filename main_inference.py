@@ -3,25 +3,24 @@
 import argparse
 import datetime
 import json
+import os
 import random
+import sys
 import time
 from pathlib import Path
-import os, sys
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
 
+import util.misc as utils
+from datasets_inference import build_dataset, get_coco_api_from_dataset
+from engine_inference import evaluate, train_one_epoch
+from groundingdino.util.utils import clean_state_dict
 from util.get_param_dicts import get_param_dict
 from util.logger import setup_logger
 from util.slconfig import DictAction, SLConfig
 from util.utils import BestMetricHolder
-import util.misc as utils
-
-import datasets_inference
-from datasets_inference import build_dataset, get_coco_api_from_dataset
-from engine_inference import evaluate, train_one_epoch
-
-from groundingdino.util.utils import clean_state_dict
 
 
 def get_args_parser():
@@ -86,7 +85,11 @@ def get_args_parser():
         action="store_true",
         help="apply test-time normalization using Segment Anything Model (SAM) for refinement and visual exemplars as box prompts",
     )
-    parser.add_argument("--sam_model_path", default="./checkpoints/sam_vit_h_4b8939.pth", help="path to SAM model checkpoint")
+    parser.add_argument(
+        "--sam_model_path",
+        default="./checkpoints/sam_vit_h_4b8939.pth",
+        help="path to SAM model checkpoint",
+    )
     parser.add_argument(
         "--exemp_tt_norm",
         action="store_true",

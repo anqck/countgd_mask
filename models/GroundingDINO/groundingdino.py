@@ -523,7 +523,16 @@ class GroundingDINO(nn.Module):
                 poss.append(pos_l)
 
         input_query_bbox = input_query_label = attn_mask = dn_meta = None
-        hs, reference, hs_enc, ref_enc, init_box_proposal = self.transformer(
+        # pred_masks_per_dec_layer: n_dec, bs, nq, h, w
+        (
+            hs,
+            reference,
+            hs_enc,
+            ref_enc,
+            init_box_proposal,
+            pred_masks_per_dec_layer,
+            interm_masks,
+        ) = self.transformer(
             srcs,
             masks,
             input_query_bbox,
@@ -552,7 +561,11 @@ class GroundingDINO(nn.Module):
             ]
         )
 
-        out = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord_list[-1]}
+        out = {
+            "pred_logits": outputs_class[-1],
+            "pred_boxes": outputs_coord_list[-1],
+            "pred_masks": pred_masks_per_dec_layer[-1],
+        }
 
         # Used to calculate losses
         bs, len_td = text_dict["text_token_mask"].shape
@@ -566,9 +579,11 @@ class GroundingDINO(nn.Module):
 
         # for intermediate outputs
         if self.aux_loss:
-            out["aux_outputs"] = self._set_aux_loss(outputs_class, outputs_coord_list)
+            out["aux_outputs"] = self._set_aux_loss(
+                outputs_class, outputs_coord_list, pred_masks_per_dec_layer
+            )
         out["token"] = one_hot_token
-        # # for encoder output
+        # for encoder output
         if hs_enc is not None:
             # prepare intermediate outputs
             interm_coord = ref_enc[-1]
@@ -576,11 +591,12 @@ class GroundingDINO(nn.Module):
             out["interm_outputs"] = {
                 "pred_logits": interm_class,
                 "pred_boxes": interm_coord,
+                "pred_masks": interm_masks,
             }
-            out["interm_outputs_for_matching_pre"] = {
-                "pred_logits": interm_class,
-                "pred_boxes": init_box_proposal,
-            }
+            # out["interm_outputs_for_matching_pre"] = {
+            #     "pred_logits": interm_class,
+            #     "pred_boxes": init_box_proposal,
+            # }
 
         # outputs['pred_logits'].shape
         # torch.Size([4, 900, 256])
@@ -588,13 +604,14 @@ class GroundingDINO(nn.Module):
         # outputs['pred_boxes'].shape
         # torch.Size([4, 900, 4])
 
+        # outputs['pred_masks'].shape
+        # torch.Size([4, 900, h, w])
+
         # outputs['text_mask'].shape
         # torch.Size([256])
 
-        # outputs['text_mask']
-
         # outputs['aux_outputs'][0].keys()
-        # dict_keys(['pred_logits', 'pred_boxes', 'one_hot', 'text_mask'])
+        # dict_keys(['pred_logits', 'pred_boxes', 'one_hot', 'text_mask', 'pred_masks'])
 
         # outputs['aux_outputs'][img_idx]
 
@@ -602,7 +619,7 @@ class GroundingDINO(nn.Module):
         # <class 'transformers.tokenization_utils_base.BatchEncoding'>
 
         # outputs['interm_outputs'].keys()
-        # dict_keys(['pred_logits', 'pred_boxes', 'one_hot', 'text_mask'])
+        # dict_keys(['pred_logits', 'pred_boxes', 'pred_masks', 'one_hot', 'text_mask'])
 
         # outputs['interm_outputs_for_matching_pre'].keys()
         # dict_keys(['pred_logits', 'pred_boxes'])
@@ -613,18 +630,31 @@ class GroundingDINO(nn.Module):
         return out
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_coord):
+    def _set_aux_loss(self, outputs_class, outputs_coord, outputs_masks):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
         return [
-            {"pred_logits": a, "pred_boxes": b}
-            for a, b in zip(outputs_class[:-1], outputs_coord[:-1])
+            {
+                "pred_logits": a,
+                "pred_boxes": b,
+                "pred_masks": c,
+            }
+            for a, b, c in zip(
+                outputs_class[:-1], outputs_coord[:-1], outputs_masks[:-1]
+            )
         ]
 
 
 class SetCriterion(nn.Module):
-    def __init__(self, matcher, weight_dict, focal_alpha, focal_gamma, losses):
+    def __init__(
+        self,
+        matcher,
+        weight_dict,
+        focal_alpha,
+        focal_gamma,
+        losses,
+    ):
         """Create the criterion.
         Parameters:
             matcher: module able to compute a matching between targets and proposals
@@ -785,6 +815,7 @@ class SetCriterion(nn.Module):
             for_match = {
                 "pred_logits": outputs["pred_logits"][j].unsqueeze(0),
                 "pred_boxes": outputs["pred_boxes"][j].unsqueeze(0),
+                "pred_masks": outputs["pred_masks"][j].unsqueeze(0),
             }
 
             inds = self.matcher(for_match, [targets[j]], label_map_list[j])
@@ -916,94 +947,6 @@ class PostProcess(nn.Module):
         tokenized = self.tokenizer(caption, padding="longest", return_tensors="pt")
         label_list = torch.arange(len(cat_list))
         pos_map = create_positive_map(tokenized, label_list, cat_list, caption)
-        # build a mapping from label_id to pos_map
-        if args.use_coco_eval:
-            id_map = {
-                0: 1,
-                1: 2,
-                2: 3,
-                3: 4,
-                4: 5,
-                5: 6,
-                6: 7,
-                7: 8,
-                8: 9,
-                9: 10,
-                10: 11,
-                11: 13,
-                12: 14,
-                13: 15,
-                14: 16,
-                15: 17,
-                16: 18,
-                17: 19,
-                18: 20,
-                19: 21,
-                20: 22,
-                21: 23,
-                22: 24,
-                23: 25,
-                24: 27,
-                25: 28,
-                26: 31,
-                27: 32,
-                28: 33,
-                29: 34,
-                30: 35,
-                31: 36,
-                32: 37,
-                33: 38,
-                34: 39,
-                35: 40,
-                36: 41,
-                37: 42,
-                38: 43,
-                39: 44,
-                40: 46,
-                41: 47,
-                42: 48,
-                43: 49,
-                44: 50,
-                45: 51,
-                46: 52,
-                47: 53,
-                48: 54,
-                49: 55,
-                50: 56,
-                51: 57,
-                52: 58,
-                53: 59,
-                54: 60,
-                55: 61,
-                56: 62,
-                57: 63,
-                58: 64,
-                59: 65,
-                60: 67,
-                61: 70,
-                62: 72,
-                63: 73,
-                64: 74,
-                65: 75,
-                66: 76,
-                67: 77,
-                68: 78,
-                69: 79,
-                70: 80,
-                71: 81,
-                72: 82,
-                73: 84,
-                74: 85,
-                75: 86,
-                76: 87,
-                77: 88,
-                78: 89,
-                79: 90,
-            }
-            new_pos_map = torch.zeros((91, 256))
-            for k, v in id_map.items():
-                new_pos_map[v] = pos_map[k]
-            pos_map = new_pos_map
 
         self.nms_iou_threshold = nms_iou_threshold
         self.positive_map = pos_map

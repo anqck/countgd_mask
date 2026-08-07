@@ -336,11 +336,11 @@ class Transformer(nn.Module):
             position_ids=text_dict["position_ids"],
             text_self_attention_masks=text_dict["text_self_attention_masks"],
         )
+        memory = torch.Tensor(encoder_results[0])
+        memory_text = torch.Tensor(encoder_results[1])
         if predict_mask:
             # According to backbone and encoder memory layout, layer0 is the most
-            # coarse feature map (stride-8)
-            memory = torch.Tensor(encoder_results[0])
-            memory_text = torch.Tensor(encoder_results[1])
+            # coarse feature map (1/8) from encoder memory
             # -> bs, c, \sum{wh}
             mem0 = memory.transpose(1, 2)
             split_regions: list[int] = [w * h for h, w in spatial_shapes]
@@ -352,6 +352,7 @@ class Transformer(nn.Module):
             mem0 = torch.unflatten(mem0, 2, tuple(spatial_shapes[0]))
 
             cur_fpn = self.feature_lateral_conv(backbone_layer_0)
+            # We interpolates mem0 (1/8) into cur_fpn (1/4) size before adding
             cur_fpn = self.feature_lateral_norm(cur_fpn)
             y = cur_fpn + F.interpolate(
                 mem0,
@@ -487,12 +488,17 @@ class Transformer(nn.Module):
         #########################################################
         predicted_masks = []
         if predict_mask:
-            for dec_layer_id, dec_output in enumerate(hs):
+            for dec_output in hs:
                 dec_output_norm = self.decoder_norm(dec_output)
                 dec_output_norm = dec_output_norm.transpose(0, 1)
                 mask_embed = self.mask_embed(dec_output_norm)
                 output_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
                 predicted_masks.append(output_mask)
+
+        interm_dec_output_norm = self.decoder_norm(tgt_undetach.transpose(0, 1))
+        interm_dec_output_norm = interm_dec_output_norm.transpose(0, 1)
+        interm_mask_embed = self.mask_embed(interm_dec_output_norm)
+        interm_masks = torch.einsum("bqc,bchw->bqhw", interm_mask_embed)
 
         #########################################################
         # Begin postprocess
@@ -508,7 +514,16 @@ class Transformer(nn.Module):
         # ref_enc: (n_enc+1, bs, nq, query_dim) or (1, bs, nq, query_dim) or (n_enc, bs, nq, d_model) or None
         #########################################################
 
-        return hs, references, hs_enc, ref_enc, init_box_proposal, predicted_masks
+        return (
+            hs,
+            references,
+            hs_enc,
+            ref_enc,
+            init_box_proposal,
+            mask_features,
+            predicted_masks,
+            interm_masks,
+        )
         # hs: (n_dec, bs, nq, d_model)
         # references: sigmoid coordinates. (n_dec+1, bs, bq, 4)
         # hs_enc: (n_enc+1, bs, nq, d_model) or (1, bs, nq, d_model) or None
