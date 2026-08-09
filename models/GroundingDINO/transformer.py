@@ -481,8 +481,8 @@ class Transformer(nn.Module):
             text_attention_mask=~text_dict["text_token_mask"],
             # we ~ the mask . False means use the token; True means pad the token
         )
-        hs = torch.Tensor(decode_results[0])
-        references = torch.Tensor(decode_results[1])
+        hs: list[torch.Tensor] = decode_results[0]
+        references: list[torch.Tensor] = decode_results[1]
         #########################################################
         # End Decoder
         # hs: n_dec, bs, nq, d_model
@@ -493,22 +493,23 @@ class Transformer(nn.Module):
         if predict_mask:
             for dec_output in hs:
                 dec_output_norm = self.decoder_norm(dec_output)
-                dec_output_norm = dec_output_norm.transpose(0, 1)
                 mask_embed = self.mask_embed(dec_output_norm)
                 output_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
                 predicted_masks.append(output_mask)
 
-        interm_dec_output_norm = self.decoder_norm(tgt_undetach.transpose(0, 1))
-        interm_dec_output_norm = interm_dec_output_norm.transpose(0, 1)
-        interm_mask_embed = self.mask_embed(interm_dec_output_norm)
-        interm_masks = torch.einsum("bqc,bchw->bqhw", interm_mask_embed)
-
         #########################################################
         # Begin postprocess
         #########################################################
+        interm_masks: torch.Tensor | None = None
         if self.two_stage_type == "standard":
             hs_enc = tgt_undetach.unsqueeze(0)
             ref_enc = refpoint_embed_undetach.sigmoid().unsqueeze(0)
+            if predict_mask:
+                interm_dec_output_norm = self.decoder_norm(tgt_undetach)
+                interm_mask_embed = self.mask_embed(interm_dec_output_norm)
+                interm_masks = torch.einsum(
+                    "bqc,bchw->bqhw", interm_mask_embed, mask_features
+                )
         else:
             hs_enc = ref_enc = None
         #########################################################
