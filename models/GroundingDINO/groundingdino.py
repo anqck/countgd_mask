@@ -530,6 +530,7 @@ class GroundingDINO(nn.Module):
             hs_enc,
             ref_enc,
             init_box_proposal,
+            _mask_features,
             pred_masks_per_dec_layer,
             interm_masks,
         ) = self.transformer(
@@ -564,8 +565,9 @@ class GroundingDINO(nn.Module):
         out = {
             "pred_logits": outputs_class[-1],
             "pred_boxes": outputs_coord_list[-1],
-            "pred_masks": pred_masks_per_dec_layer[-1],
         }
+        if pred_masks_per_dec_layer:
+            out["pred_masks"] = pred_masks_per_dec_layer[-1]
 
         # Used to calculate losses
         bs, len_td = text_dict["text_token_mask"].shape
@@ -591,8 +593,9 @@ class GroundingDINO(nn.Module):
             out["interm_outputs"] = {
                 "pred_logits": interm_class,
                 "pred_boxes": interm_coord,
-                "pred_masks": interm_masks,
             }
+            if interm_masks is not None:
+                out["interm_outputs"]["pred_masks"] = interm_masks
             # out["interm_outputs_for_matching_pre"] = {
             #     "pred_logits": interm_class,
             #     "pred_boxes": init_box_proposal,
@@ -634,15 +637,20 @@ class GroundingDINO(nn.Module):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
+        if outputs_masks:
+            return [
+                {
+                    "pred_logits": a,
+                    "pred_boxes": b,
+                    "pred_masks": c,
+                }
+                for a, b, c in zip(
+                    outputs_class[:-1], outputs_coord[:-1], outputs_masks[:-1]
+                )
+            ]
         return [
-            {
-                "pred_logits": a,
-                "pred_boxes": b,
-                "pred_masks": c,
-            }
-            for a, b, c in zip(
-                outputs_class[:-1], outputs_coord[:-1], outputs_masks[:-1]
-            )
+            {"pred_logits": a, "pred_boxes": b}
+            for a, b in zip(outputs_class[:-1], outputs_coord[:-1])
         ]
 
 
@@ -702,6 +710,10 @@ class SetCriterion(nn.Module):
         focal_alpha,
         focal_gamma,
         losses,
+        # From MaskDINO
+        num_points: int = 12544,
+        oversample_ratio: float = 3.0,
+        importance_sample_ratio: float = 0.75,
     ):
         """Create the criterion.
         Parameters:
@@ -716,6 +728,9 @@ class SetCriterion(nn.Module):
         self.losses = losses
         self.focal_alpha = focal_alpha
         self.focal_gamma = focal_gamma
+        self.num_points = num_points
+        self.oversample_ratio = oversample_ratio
+        self.importance_sample_ratio = importance_sample_ratio
 
     @torch.no_grad()
     def loss_cardinality(self, outputs, targets, indices, num_boxes):
@@ -1020,8 +1035,9 @@ class SetCriterion(nn.Module):
             for_match = {
                 "pred_logits": outputs["pred_logits"][j].unsqueeze(0),
                 "pred_boxes": outputs["pred_boxes"][j].unsqueeze(0),
-                "pred_masks": outputs["pred_masks"][j].unsqueeze(0),
             }
+            if "pred_masks" in outputs:
+                for_match["pred_masks"] = outputs["pred_masks"][j].unsqueeze(0)
 
             inds = self.matcher(for_match, [targets[j]], label_map_list[j])
             indices.extend(inds)
@@ -1229,14 +1245,17 @@ def build_groundingdino(
 ) -> tuple[GroundingDINO, SetCriterion, dict[str, PostProcess]]:
     device = torch.device(args.device)
 
+    generate_mask = getattr(args, "generate_mask", False)
+
     # prepare weight dict
     weight_dict = {
         "loss_ce": args.cls_loss_coef,  # 5.0
         "loss_bbox": args.bbox_loss_coef,  # 1.0
         "loss_giou": args.giou_loss_coef,  # 0.0
-        "loss_mask": args.mask_loss_coef,
-        "loss_dice": args.dice_lost_coef,
     }
+    if generate_mask:
+        weight_dict["loss_mask"] = args.mask_loss_coef
+        weight_dict["loss_dice"] = args.dice_loss_coef
     clean_weight_dict = copy.deepcopy(weight_dict)
 
     if args.aux_loss:
@@ -1331,8 +1350,11 @@ def build_groundingdino(
             focal_alpha=args.focal_alpha,  # 0.25
             focal_gamma=args.focal_gamma,  # 2.0
             losses=["labels", "boxes"]
-            if not args.generate_masks
+            if not generate_mask
             else ["labels", "boxes", "masks"],
+            num_points=getattr(args, "mask_num_points", 112 * 112),
+            oversample_ratio=getattr(args, "mask_oversample_ratio", 3.0),
+            importance_sample_ratio=getattr(args, "mask_importance_sample_ratio", 0.75),
         ).to(device),
         {
             "bbox": PostProcess(

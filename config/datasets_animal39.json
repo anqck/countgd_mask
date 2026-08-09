@@ -1,0 +1,19 @@
+{
+  "train": [
+    {
+      "root": "DATASET_ROOT/images",
+      "anno": "DATASET_ROOT/odvg_train.jsonl",
+      "label_map": "DATASET_ROOT/odvg_train_label_map.json",
+      "dataset_mode": "odvg",
+      "segm_masks_dir": "../segm_masks"
+    }
+  ],
+  "val": [
+    {
+      "root": "DATASET_ROOT/images",
+      "anno": "DATASET_ROOT/coco_val.json",
+      "label_map": null,
+      "dataset_mode": "coco"
+    }
+  ]
+}

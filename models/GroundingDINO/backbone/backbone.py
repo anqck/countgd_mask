@@ -120,7 +120,7 @@ class BackboneBase(nn.Module):
 
     def forward(
         self, tensor_list: NestedTensor
-    ) -> tuple[dict[str, NestedTensor], torch.Tensor]:
+    ) -> tuple[dict[str, NestedTensor], torch.Tensor | None]:
         xs = self.body(tensor_list.tensors)
         out: dict[str, NestedTensor] = {}
         for name, x in xs.items():
@@ -128,7 +128,20 @@ class BackboneBase(nn.Module):
             assert m is not None
             mask = F.interpolate(m[None].float(), size=x.shape[-2:]).to(torch.bool)[0]
             out[name] = NestedTensor(x, mask)
-        return out, xs[0]
+        # IntermediateLayerGetter forward only runs layers specified by
+        # return_interm_indices. However it does stores all layers in the backbone
+        # Therefore we can get layer 0 directly from it
+        # IntermediateLayerGetter inherits ModuleDict, init with all layers from backbone
+        # def forward(self, x):
+        #     out = OrderedDict()
+        #     for name, module in self.items():
+        #         x = module(x)
+        #         if name in self.return_layers:
+        #             out_name = self.return_layers[name]
+        #             out[out_name] = x
+        #     return out
+        layer0 = xs.get("0", None)
+        return out, layer0
 
 
 class Backbone(BackboneBase):
@@ -173,11 +186,11 @@ class Joiner(nn.Sequential):
 
     def forward(
         self, tensor_list: NestedTensor
-    ) -> tuple[list[NestedTensor], torch.Tensor, list[torch.Tensor]]:  # ty: ignore[invalid-method-override]
+    ) -> tuple[list[NestedTensor], torch.Tensor | None, list[torch.Tensor]]:  # ty: ignore[invalid-method-override]
         backbone: Backbone | SwinTransformer = self[0]
         pos_emb: PositionEmbeddingLearned | PositionEmbeddingSineHW = self[1]
         xs: dict[int | str, NestedTensor]
-        layer0: torch.Tensor
+        layer0: torch.Tensor | None
         xs, layer0 = backbone(tensor_list)
         out: list[NestedTensor] = []
         pos: list[torch.Tensor] = []

@@ -672,6 +672,9 @@ class SwinTransformer(nn.Module):
                 f"norm{i_layer}",
                 norm_layer(num_features[i_layer]),
             )
+        # Hardcode norm0 must exist even when 0 is not in out_indices
+        if 0 not in out_indices:
+            self.add_module("norm0", norm_layer(num_features[0]))
 
         self._freeze_stages()
 
@@ -694,7 +697,7 @@ class SwinTransformer(nn.Module):
 
     def forward_raw(
         self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[tuple[torch.Tensor, ...], torch.Tensor]:
         """
         Forward function.
 
@@ -702,7 +705,9 @@ class SwinTransformer(nn.Module):
             x (Tensor): Torch input image tensor of size (BS, C, W, H)
 
         Returns:
-            tuple[Tensor, Tensor, Tensor, Tensor]: 4 layers of Swin output
+            tuple[tuple[Tensor, ...], Tensor]: outs for out_indices and the
+                always-computed stage-0 feature (stride 4, embed_dim channels)
+                for the mask pixel decoder.
         """
         x = self.patch_embed(x)
 
@@ -718,11 +723,12 @@ class SwinTransformer(nn.Module):
         x = self.pos_drop(x)
 
         outs = []
+        layer0: torch.Tensor | None = None
         for i in range(self.num_layers):
             layer = self.layers[i]
             x_out, H, W, x, Wh, Ww = layer(x, Wh, Ww)
 
-            if i in self.out_indices:
+            if i == 0 or i in self.out_indices:
                 norm_layer = getattr(self, f"norm{i}")
                 x_out = norm_layer(x_out)
 
@@ -731,13 +737,17 @@ class SwinTransformer(nn.Module):
                     .permute(0, 3, 1, 2)
                     .contiguous()
                 )
-                outs.append(out)
+                if i == 0:
+                    layer0 = out
+                if i in self.out_indices:
+                    outs.append(out)
+        assert layer0 is not None
         # in:
         #   torch.Size([2, 3, 1024, 1024])
         # outs:
         #   [torch.Size([2, 192, 256, 256]), torch.Size([2, 384, 128, 128]), \
         #       torch.Size([2, 768, 64, 64]), torch.Size([2, 1536, 32, 32])]
-        return tuple(outs)
+        return tuple(outs), layer0
 
     def forward(
         self, tensor_list: NestedTensor
@@ -749,15 +759,15 @@ class SwinTransformer(nn.Module):
             tensor_list (NestedTensor): Nested tensor
 
         Returns:
-            tuple[dict[int, NestedTensor], NestedTensor]:
-                index-mapped for each layer of Swin output
-                and layer0
+            tuple[dict[int, NestedTensor], torch.Tensor]:
+                index-mapped outputs for out_indices and the stage-0
+                (stride-4) feature for the mask pixel decoder.
         """
         # Extract input tensors
         x = tensor_list.tensors
 
         # Run model forward pass
-        outs = self.forward_raw(x)
+        outs, layer0 = self.forward_raw(x)
 
         # collect for nesttensors
         outs_dict = {}
@@ -768,8 +778,6 @@ class SwinTransformer(nn.Module):
                 0
             ]
             outs_dict[idx] = NestedTensor(out_i, mask)
-
-        layer0 = outs[0]
 
         return outs_dict, layer0
 

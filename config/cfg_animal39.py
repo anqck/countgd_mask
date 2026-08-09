@@ -141,3 +141,8 @@ conv_dim = 256
 backbone_layer0_channels = 192
 mask_loss_coef = 4.5
 dice_loss_coef = 4.5
+# Point-sampled mask loss (MaskDINO defaults)
+mask_num_points = 12544
+mask_oversample_ratio = 3.0
+mask_importance_sample_ratio = 0.75
+train_mask_branch_only = False

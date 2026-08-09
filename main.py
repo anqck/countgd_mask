@@ -189,6 +189,31 @@ def main(args):
                 if keyword in name:
                     parameter.requires_grad_(False)
                     break
+
+    # Stage-1 mask-head-only finetuning: freeze everything except the mask
+    # branch so a pre-trained CountGD checkpoint's counting behaviour is
+    # preserved while only the new segmentation head learns.
+    # Don't know why
+    # CC: MiniMax-M3 (OpenCode session; revisit later)
+    if getattr(args, "train_mask_branch_only", False):
+        mask_branch_keywords = (
+            "mask_features",
+            "feature_lateral_conv",
+            "feature_lateral_norm",
+            "feature_output_conv",
+            "feature_output_norm",
+            "mask_embed",
+        )
+        for name, parameter in model.named_parameters():
+            if not any(k in name for k in mask_branch_keywords):
+                parameter.requires_grad_(False)
+        logger.info(
+            "train_mask_branch_only=True: only mask-branch params trainable:\n"
+            + json.dumps(
+                {n: p.numel() for n, p in model.named_parameters() if p.requires_grad},
+                indent=2,
+            )
+        )
     logger.info(
         "params after freezing:\n"
         + json.dumps(
@@ -334,7 +359,7 @@ def main(args):
 
     if args.eval:
         os.environ["EVAL_FLAG"] = "TRUE"
-        test_stats, coco_evaluator = evaluate(
+        count_mae, test_stats, coco_evaluator = evaluate(
             model,
             model_without_ddp,
             criterion,
@@ -346,7 +371,7 @@ def main(args):
             wo_class_error=wo_class_error,
             args=args,
         )
-        if args.output_dir:
+        if args.output_dir and coco_evaluator is not None:
             utils.save_on_master(
                 coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth"
             )
@@ -417,7 +442,6 @@ def main(args):
             args=args,
             logger=(logger if args.save_log else None),
         )
-        map_regular = test_stats["coco_eval_bbox"][0]
         _isbest = best_map_holder.update(val_mae, epoch, is_ema=False)
         if _isbest:
             checkpoint_path = output_dir / "checkpoint_best_regular.pth"
