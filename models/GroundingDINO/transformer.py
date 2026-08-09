@@ -336,20 +336,23 @@ class Transformer(nn.Module):
             position_ids=text_dict["position_ids"],
             text_self_attention_masks=text_dict["text_self_attention_masks"],
         )
-        memory = torch.Tensor(encoder_results[0])
-        memory_text = torch.Tensor(encoder_results[1])
+        memory = encoder_results[0]
+        memory_text = encoder_results[1]
+        mask_features: torch.Tensor | None = None
         if predict_mask:
             # According to backbone and encoder memory layout, layer0 is the most
             # coarse feature map (1/8) from encoder memory
             # -> bs, c, \sum{wh}
             mem0 = memory.transpose(1, 2)
-            split_regions: list[int] = [w * h for h, w in spatial_shapes]
+            split_regions: list[int] = [int(h) * int(w) for h, w in spatial_shapes]
             # We're using `torch.*` functions because they have better typing annotation,
             # which would be useful to LSPs
             # -> ([bs, c, wh] * 4)[0]
             mem0 = torch.split(mem0, split_regions, 2)[0]
             # -> (bs, c, h, w) because spatial_shapes in in (h, w)
-            mem0 = torch.unflatten(mem0, 2, tuple(spatial_shapes[0]))
+            mem0 = torch.unflatten(
+                mem0, 2, (int(spatial_shapes[0][0]), int(spatial_shapes[0][1]))
+            )
 
             cur_fpn = self.feature_lateral_conv(backbone_layer_0)
             # We interpolates mem0 (1/8) into cur_fpn (1/4) size before adding
