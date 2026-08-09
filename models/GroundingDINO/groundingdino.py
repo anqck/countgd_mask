@@ -1267,6 +1267,27 @@ def build_groundingdino(
             )
         weight_dict.update(aux_weight_dict)
 
+    # two-stage (encoder-query) loss weights; criterion emits {k}_interm.
+    # Only engaged with the mask branch: without it, interm losses stay
+    # computed-but-dropped, preserving the original counting training dynamics.
+    if generate_mask and args.two_stage_type != "no":
+        _coeff_weight_dict = {
+            "loss_ce": args.cls_loss_coef,
+            "loss_bbox": 1.0
+            if getattr(args, "no_interm_box_loss", False)
+            else args.bbox_loss_coef,
+            "loss_giou": 1.0
+            if getattr(args, "no_interm_box_loss", False)
+            else args.giou_loss_coef,
+        }
+        _coeff_weight_dict["loss_mask"] = args.mask_loss_coef
+        _coeff_weight_dict["loss_dice"] = args.dice_loss_coef
+        interm_weight_dict = {
+            k + "_interm": v * getattr(args, "interm_loss_coef", 1.0)
+            for k, v in _coeff_weight_dict.items()
+        }
+        weight_dict.update(interm_weight_dict)
+
     # Built Backbone according to config:
     # Joiner(
     #     SwinTransformer(
