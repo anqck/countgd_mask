@@ -298,7 +298,11 @@ def evaluate(
     if not useCats:
         print(f"useCats: {useCats} !!!")
 
-    coco_evaluator = CocoGroundingEvaluator(base_ds, iou_types, useCats=useCats)
+    coco_evaluator = None
+    if base_ds is not None:
+        coco_evaluator = CocoGroundingEvaluator(base_ds, iou_types, useCats=useCats)
+    else:
+        print("No COCO-format val annotations; skipping COCO evaluation (MAE only).")
 
     panoptic_evaluator = None
     if "panoptic" in postprocessors:

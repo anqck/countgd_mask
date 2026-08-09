@@ -960,12 +960,35 @@ class SetCriterion(nn.Module):
         src_idx = self._get_src_permutation_idx(indices)
         tgt_idx = self._get_tgt_permutation_idx(indices)
         src_masks = outputs["pred_masks"]
+        # pred masks are at stride-4 resolution of the PADDED image canvas
+        # (the model saw the collate-padded NestedTensor). Recover the padded
+        # full-res size so GT masks live in the same normalized coordinate
+        # space as the predictions before point sampling.
+        padded_size = (src_masks.shape[-2] * 4, src_masks.shape[-1] * 4)
         src_masks = src_masks[src_idx]
         masks = [t["masks"] for t in targets]
-        # TODO use valid to mask invalid areas due to padding in loss
-        target_masks, _valid = nested_tensor_from_tensor_list(masks).decompose()
-        target_masks = target_masks.to(src_masks)
-        target_masks = target_masks[tgt_idx]
+        padded_masks = []
+        for m in masks:
+            m = m.float()
+            # Crop if GT is slightly larger than the canvas (canvas size may not
+            # be divisible by the stride), then bottom-right pad to the canvas.
+            m = m[..., : padded_size[0], : padded_size[1]]
+            pad_h = padded_size[0] - m.shape[-2]
+            pad_w = padded_size[1] - m.shape[-1]
+            if pad_h > 0 or pad_w > 0:
+                m = F.pad(m, (0, pad_w, 0, pad_h))
+            padded_masks.append(m)
+        # Flat [N_total, H, W]; select matched instances via flat indices since
+        # images have differing instance counts (no 4D [bs, n, h, w] tensor).
+        target_masks_flat = torch.cat(padded_masks, dim=0).to(src_masks)
+        batch_idx, tgt_inst_idx = tgt_idx
+        offsets = torch.tensor(
+            [0] + [m.shape[0] for m in padded_masks], device=src_masks.device
+        ).cumsum(0)
+        flat_tgt_idx = offsets[batch_idx.to(src_masks.device)] + tgt_inst_idx.to(
+            src_masks.device
+        )
+        target_masks = target_masks_flat[flat_tgt_idx]
 
         # No need to upsample predictions as we are using normalized coordinates
         # N x 1 x H x W

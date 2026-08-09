@@ -336,8 +336,8 @@ class Transformer(nn.Module):
             position_ids=text_dict["position_ids"],
             text_self_attention_masks=text_dict["text_self_attention_masks"],
         )
-        memory = encoder_results[0]
-        memory_text = encoder_results[1]
+        memory: torch.Tensor = encoder_results[0]
+        memory_text: torch.Tensor = encoder_results[1]
         mask_features: torch.Tensor | None = None
         if predict_mask:
             # According to backbone and encoder memory layout, layer0 is the most
