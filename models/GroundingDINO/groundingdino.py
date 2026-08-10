@@ -899,6 +899,7 @@ class SetCriterion(nn.Module):
             num_points,
             oversample_ratio,
             importance_sample_ratio,
+            valid_scale=None,
         ):
             """
             Sample points in [0, 1] x [0, 1] coordinate space based on their uncertainty. The unceratinties
@@ -915,6 +916,8 @@ class SetCriterion(nn.Module):
                 num_points (int): The number of points P to sample.
                 oversample_ratio (int): Oversampling parameter.
                 importance_sample_ratio (float): Ratio of points that are sampled via importnace sampling.
+                valid_scale (Tensor, optional): Tensor of shape (N, 1, 2) containing valid (sx, sy) scale
+                    ratios to restrict sampling to unpadded image regions.
 
             Returns:
                 point_coords (Tensor): A tensor of shape (N, P, 2) that contains the coordinates of P
@@ -927,6 +930,8 @@ class SetCriterion(nn.Module):
             point_coords = torch.rand(
                 num_boxes, num_sampled, 2, device=coarse_logits.device
             )
+            if valid_scale is not None:
+                point_coords = point_coords * valid_scale
             point_logits = point_sample(
                 coarse_logits, point_coords, align_corners=False
             )
@@ -944,12 +949,15 @@ class SetCriterion(nn.Module):
                 num_boxes, num_uncertain_points, 2
             )
             if num_random_points > 0:
+                rand_coords = torch.rand(
+                    num_boxes, num_random_points, 2, device=coarse_logits.device
+                )
+                if valid_scale is not None:
+                    rand_coords = rand_coords * valid_scale
                 point_coords = torch.cat(
                     [
                         point_coords,
-                        torch.rand(
-                            num_boxes, num_random_points, 2, device=coarse_logits.device
-                        ),
+                        rand_coords,
                     ],
                     dim=1,
                 )
@@ -990,19 +998,34 @@ class SetCriterion(nn.Module):
         )
         target_masks = target_masks_flat[flat_tgt_idx]
 
+        # Compute valid image region scale (sx, sy) for each matched instance to restrict
+        # point sampling strictly within unpadded valid image boundaries.
+        valid_scales = []
+        for m in masks:
+            h_orig = m.shape[-2] if m.dim() >= 2 else padded_size[0]
+            w_orig = m.shape[-1] if m.dim() >= 2 else padded_size[1]
+            sy = min(h_orig, padded_size[0]) / padded_size[0]
+            sx = min(w_orig, padded_size[1]) / padded_size[1]
+            valid_scales.append((sx, sy))
+        valid_scales_tensor = torch.tensor(
+            valid_scales, device=src_masks.device, dtype=src_masks.dtype
+        )
+        valid_scale = valid_scales_tensor[batch_idx.to(src_masks.device)][:, None, :]
+
         # No need to upsample predictions as we are using normalized coordinates
         # N x 1 x H x W
         src_masks = src_masks[:, None]
         target_masks = target_masks[:, None]
 
         with torch.no_grad():
-            # sample point_coords
+            # sample point_coords within valid image boundaries
             point_coords = get_uncertain_point_coords_with_randomness(
                 src_masks,
                 lambda logits: calculate_uncertainty(logits),
                 self.num_points,
                 self.oversample_ratio,
                 self.importance_sample_ratio,
+                valid_scale=valid_scale,
             )
             # get gt labels
             point_labels = point_sample(
