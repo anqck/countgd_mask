@@ -1,0 +1,268 @@
+{
+    "images": [
+        {
+            "height": 768,
+            "width": 1344,
+            "id": 118,
+            "file_name": "00118.jpg"
+        }
+    ],
+    "annotations": [
+        {
+            "iscrowd": 0,
+            "image_id": 118,
+            "bbox": [
+                631.3,
+                431.04,
+                2,
+                2
+            ],
+            "category_id": 2,
+            "id": 497,
+            "area": 4
+        },
+        {
+            "iscrowd": 0,
+            "image_id": 118,
+            "bbox": [
+                434.42,
+                492.56,
+                2,
+                2
+            ],
+            "category_id": 2,
+            "id": 498,
+            "area": 4
+        },
+        {
+            "iscrowd": 0,
+            "image_id": 118,
+            "bbox": [
+                500.56,
+                421.81,
+                2,
+                2
+            ],
+            "category_id": 2,
+            "id": 499,
+            "area": 4
+        },
+        {
+            "iscrowd": 0,
+            "image_id": 118,
+            "bbox": [
+                802.03,
+                431.04,
+                2,
+                2
+            ],
+            "category_id": 2,
+            "id": 500,
+            "area": 4
+        },
+        {
+            "iscrowd": 0,
+            "image_id": 118,
+            "bbox": [
+                991.22,
+                451.03,
+                2,
+                2
+            ],
+            "category_id": 2,
+            "id": 501,
+            "area": 4
+        },
+        {
+            "iscrowd": 0,
+            "image_id": 118,
+            "bbox": [
+                1163.49,
+                560.24,
+                2,
+                2
+            ],
+            "category_id": 2,
+            "id": 502,
+            "area": 4
+        },
+        {
+            "iscrowd": 0,
+            "image_id": 118,
+            "bbox": [
+                302.14,
+                426.42,
+                2,
+                2
+            ],
+            "category_id": 2,
+            "id": 503,
+            "area": 4
+        },
+        {
+            "iscrowd": 0,
+            "image_id": 118,
+            "bbox": [
+                607.3,
+                407.04,
+                50.0,
+                50.0
+            ],
+            "category_id": 2,
+            "id": 504,
+            "area": 2500.0
+        },
+        {
+            "iscrowd": 0,
+            "image_id": 118,
+            "bbox": [
+                410.42,
+                468.56,
+                50.0,
+                49.99999999999994
+            ],
+            "category_id": 2,
+            "id": 505,
+            "area": 2499.9999999999973
+        },
+        {
+            "iscrowd": 0,
+            "image_id": 118,
+            "bbox": [
+                476.56,
+                397.81,
+                49.99999999999994,
+                50.0
+            ],
+            "category_id": 2,
+            "id": 506,
+            "area": 2499.9999999999973
+        }
+    ],
+    "categories": [
+        {
+            "id": 0,
+            "name": "African Forest Elephant"
+        },
+        {
+            "id": 1,
+            "name": "African Savanna Elephant"
+        },
+        {
+            "id": 2,
+            "name": "American Beaver"
+        },
+        {
+            "id": 3,
+            "name": "Asian Elephant"
+        },
+        {
+            "id": 4,
+            "name": "Black Rat"
+        },
+        {
+            "id": 5,
+            "name": "Black-Tailed Prairie Dog"
+        },
+        {
+            "id": 6,
+            "name": "Bonobo"
+        },
+        {
+            "id": 7,
+            "name": "Bornean Orangutan"
+        },
+        {
+            "id": 8,
+            "name": "Brown Bear"
+        },
+        {
+            "id": 9,
+            "name": "Brown Rat"
+        },
+        {
+            "id": 10,
+            "name": "Chimpanzee"
+        },
+        {
+            "id": 11,
+            "name": "Domestic Cat"
+        },
+        {
+            "id": 12,
+            "name": "Domestic Dog"
+        },
+        {
+            "id": 13,
+            "name": "Domestic Horse"
+        },
+        {
+            "id": 14,
+            "name": "Eurasian Red Squirrel"
+        },
+        {
+            "id": 15,
+            "name": "Gray Wolf"
+        },
+        {
+            "id": 16,
+            "name": "Ground Squirrel"
+        },
+        {
+            "id": 17,
+            "name": "House Mouse"
+        },
+        {
+            "id": 18,
+            "name": "Indian Rhinoceros"
+        },
+        {
+            "id": 19,
+            "name": "Leopard"
+        },
+        {
+            "id": 20,
+            "name": "Lion"
+        },
+        {
+            "id": 21,
+            "name": "Mountain Zebra"
+        },
+        {
+            "id": 22,
+            "name": "Olive Baboon"
+        },
+        {
+            "id": 23,
+            "name": "Plains Zebra"
+        },
+        {
+            "id": 24,
+            "name": "Red Fox"
+        },
+        {
+            "id": 25,
+            "name": "Rhesus Macaque"
+        },
+        {
+            "id": 26,
+            "name": "Ring-Tailed Lemur"
+        },
+        {
+            "id": 27,
+            "name": "Sea Otter"
+        },
+        {
+            "id": 28,
+            "name": "Tiger"
+        },
+        {
+            "id": 29,
+            "name": "Vervet Monkey"
+        },
+        {
+            "id": 30,
+            "name": "Western Gorilla"
+        }
+    ]
+}

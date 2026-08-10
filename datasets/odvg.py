@@ -92,7 +92,7 @@ class ODVGDataset(VisionDataset):
             vg_labels = list(pos_labels)
             num_to_add = min(len(neg_labels), self.max_labels - len(pos_labels))
             if num_to_add > 0:
-                vg_labels.extend(random.sample(neg_labels, num_to_add))
+                vg_labels.extend(random.sample(list(neg_labels), num_to_add))
 
             # shuffle
             for i in range(len(vg_labels) - 1, 0, -1):
@@ -141,8 +141,8 @@ class ODVGDataset(VisionDataset):
                 self.segm_masks_dir,
                 os.path.basename(rel_stem) + ".npy",
             )
-            if os.path.exists(mask_abs_path):
-                raise FileNotFoundError(f"GT mask for {rel_path}")
+            if not os.path.exists(mask_abs_path):
+                raise FileNotFoundError(f"GT mask for {mask_abs_path}")
             masks = np.load(mask_abs_path)
             masks = torch.as_tensor(masks).to(torch.bool)
             assert masks.dim() == 3, (

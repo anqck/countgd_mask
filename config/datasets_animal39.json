@@ -1,19 +1,22 @@
 {
   "train": [
     {
-      "root": "DATASET_ROOT/images",
-      "anno": "DATASET_ROOT/odvg_train.jsonl",
-      "label_map": "DATASET_ROOT/odvg_train_label_map.json",
+      "root": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-New/images",
+      "anno": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-New/odvg_train_one.jsonl",
+      "label_map": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-New/odvg_train_label_map.json",
       "dataset_mode": "odvg",
-      "segm_masks_dir": "DATASET_ROOT/segm_masks"
+      "segm_masks_dir": "/mnt/storage0/Workspace/AnimalCounting/RelatedWorks/sam3/masks-retry"
     }
   ],
   "val": [
     {
-      "root": "DATASET_ROOT/images",
-      "anno": "DATASET_ROOT/coco_val.json",
+      "root": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-New/images",
+      "anno": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-New/coco_test_one.json",
       "label_map": null,
-      "dataset_mode": "coco"
+      "dataset_mode": "coco",
+      "segm_masks_dir": "/mnt/storage0/Workspace/AnimalCounting/RelatedWorks/sam3/masks-retry"
     }
   ]
 }
+
+

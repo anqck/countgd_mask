@@ -266,7 +266,7 @@ def main(args):
 
     if not args.eval:
         batch_sampler_train = torch.utils.data.BatchSampler(
-            sampler_train, args.batch_size, drop_last=True
+            sampler_train, args.batch_size, drop_last=len(dataset_train) > 1
         )
         data_loader_train = DataLoader(
             dataset_train,
@@ -277,7 +277,7 @@ def main(args):
 
     data_loader_val = DataLoader(
         dataset_val,
-        4,
+        1,
         sampler=sampler_val,
         drop_last=False,
         collate_fn=utils.collate_fn,

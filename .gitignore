@@ -1,2 +1,8 @@
 **/__pycache__/**
 vendor/**
+conda_env/**
+.Results/**
+*.pth
+checkpoints/**
+*.zip
+*.sublime-project

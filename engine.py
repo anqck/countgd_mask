@@ -46,7 +46,8 @@ def train_one_epoch(
             "class_error", utils.SmoothedValue(window_size=1, fmt="{value:.2f}")
         )
     header = f"Epoch: [{epoch}]"
-    print_freq = 10
+    print_freq = 1
+    print(len(data_loader))
 
     _cnt = 0
 
@@ -58,11 +59,7 @@ def train_one_epoch(
         cap_list = [t["cap_list"] for t in targets]
         exemplars = [t["exemplars"].to(device) for t in targets]
         labels_uncropped = [t["labels_uncropped"].to(device) for t in targets]
-        min_exemplars_in_batch = min([exemp.shape[0] for exemp in exemplars])
-        shot_num = min(random.randint(0, 3), min_exemplars_in_batch)
-        # REMOVE WHEN TRYING DIFFERENT NUMBERS OF VISUAL EXEMPLARS.
-        shot_num = min_exemplars_in_batch
-        # Adjust number of exemplars based on [shot_num].
+        shot_num = 0
         exemplars = [exemp[:shot_num] for exemp in exemplars]
         for exemp in exemplars:
             if exemp.shape[0] > 3:
@@ -329,15 +326,15 @@ def evaluate(
     print("Input text prompt:", caption)
 
     abs_errs = []
-    for _cnt, (samples, targets) in metric_logger.log_every(
-        enumerate(data_loader), 10, header, logger=logger
+    for samples, targets in metric_logger.log_every(
+        data_loader, 10, header, logger=logger
     ):
         samples = samples.to(device)
 
         targets = [{k: to_device(v, device) for k, v in t.items()} for t in targets]
-        exemplars = [t["exemplars"].to(device) for t in targets]
+        # exemplars = [t["exemplars"].to(device) for t in targets]
         _labels = [t["labels"].to(device) for t in targets]
-        # exemplars = [torch.tensor([]).to(device) for t in targets]
+        exemplars = [torch.tensor([]).to(device) for t in targets]
 
         _bs = samples.tensors.shape[0]
         input_captions = [cat_list[target["labels"][0]] + " ." for target in targets]
@@ -422,7 +419,7 @@ def evaluate(
                 if "res_info" not in output_state_dict:
                     output_state_dict["res_info"] = []
                 output_state_dict["res_info"].append(res_info.cpu())
-
+        _cnt += 1
         if args.debug and _cnt % 15 == 0:
             print("BREAK!" * 5)
             break

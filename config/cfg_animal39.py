@@ -118,18 +118,48 @@ box_threshold = 0.23
 text_threshold = 0
 use_coco_eval = False
 label_list = [
-    "bee",
-    "buffalo",
-    "goat",
-    "goose",
-    "penguin",
-    "pigeon",
-    "swan",
-    "zebra",
+    "African Forest Elephant",
+    "African Savanna Elephant",
+    "American Beaver",
+    "Asian Elephant",
+    "Black Rat",
+    "Black-Tailed Prairie Dog",
+    "Bonobo",
+    "Bornean Orangutan",
+    "Brown Bear",
+    "Brown Rat",
+    "Chimpanzee",
+    "Domestic Cat",
+    "Domestic Dog",
+    "Domestic Horse",
+    "Eurasian Red Squirrel",
+    "Gray Wolf",
+    "Ground Squirrel",
+    "House Mouse",
+    "Indian Rhinoceros",
+    "Leopard",
+    "Lion",
+    "Mountain Zebra",
+    "Olive Baboon",
+    "Plains Zebra",
+    "Red Fox",
+    "Rhesus Macaque",
+    "Ring-Tailed Lemur",
+    "Sea Otter",
+    "Tiger",
+    "Vervet Monkey",
+    "Western Gorilla",
 ]
 val_label_list = [
-    "deer",
-    "sheep",
+    "American Bison",
+    "Common Eland",
+    "American Beaver",
+    "Cow",
+    "Domestic Water Buffalo",
+    "Dromedary",
+    "Red Deer",
+    "Sheep",
+    "Wildebeest",
 ]
 
 generate_mask = True
@@ -138,7 +168,7 @@ conv_dim = 256
 # Symbolic: models/GroundingDINO/groundingdino.py:1116
 # sets args.backbone_layer0_channels = backbone.embed_dim
 # backbone.embed_dim determined by backbone builder functions
-backbone_layer0_channels = 192
+backbone_layer0_channels = 128
 mask_loss_coef = 4.5
 dice_loss_coef = 4.5
 # Point-sampled mask loss (MaskDINO defaults)

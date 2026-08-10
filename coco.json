@@ -1,0 +1,59 @@
+{
+    "images": [
+        {
+            "height": 1890,
+            "width": 2560,
+            "id": 0,
+            "file_name": "08093.jpg"
+        }
+    ],
+    "annotations": [
+        {
+            "iscrowd": 0,
+            "image_id": 0,
+            "bbox": [
+                616.23,
+                840.89,
+                2,
+                2
+            ],
+            "category_id": 0,
+            "id": 0,
+            "area": 4
+        }
+    ],
+    "categories": [
+        {
+            "id": 0,
+            "name": "American Bison"
+        },
+        {
+            "id": 1,
+            "name": "Common Eland"
+        },
+        {
+            "id": 2,
+            "name": "Cow"
+        },
+        {
+            "id": 3,
+            "name": "Domestic Water Buffalo"
+        },
+        {
+            "id": 4,
+            "name": "Dromedary"
+        },
+        {
+            "id": 5,
+            "name": "Red Deer"
+        },
+        {
+            "id": 6,
+            "name": "Sheep"
+        },
+        {
+            "id": 7,
+            "name": "Wildebeest"
+        }
+    ]
+}
