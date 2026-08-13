@@ -15,9 +15,8 @@
 # ------------------------------------------------------------------------
 
 
-import os
-
 import torch
+from torch.nn import functional as F
 from scipy.optimize import linear_sum_assignment
 from torch import nn
 
@@ -36,6 +35,10 @@ class HungarianMatcher(nn.Module):
         cost_class: float = 1,
         cost_bbox: float = 1,
         cost_giou: float = 1,
+        cost_mask: float = 1,
+        cost_dice: float = 1,
+        num_points: int = 0,
+        generate_mask: bool = False,
         focal_alpha=0.25,
     ):
         """Creates the matcher
@@ -48,10 +51,10 @@ class HungarianMatcher(nn.Module):
         self.cost_class = cost_class
         self.cost_bbox = cost_bbox
         self.cost_giou = cost_giou
-        assert cost_class != 0 or cost_bbox != 0 or cost_giou != 0, (
-            "all costs cant be 0"
-        )
-
+        self.cost_mask = cost_mask
+        self.cost_dice = cost_dice
+        self.num_points = num_points
+        self.generate_mask = generate_mask
         self.focal_alpha = focal_alpha
 
     @torch.no_grad()
@@ -113,12 +116,119 @@ class HungarianMatcher(nn.Module):
         cost_giou = -generalized_box_iou(
             box_cxcywh_to_xyxy(out_bbox), box_cxcywh_to_xyxy(tgt_bbox)
         )
-        # import pdb;pdb.set_trace()
-        # Final cost matrix
+
+        if self.generate_mask:
+
+            def point_sample(input, point_coords, **kwargs):
+                """
+                A wrapper around :function:`torch.nn.functional.grid_sample` to support 3D point_coords tensors.
+                Unlike :function:`torch.nn.functional.grid_sample` it assumes `point_coords` to lie inside
+                [0, 1] x [0, 1] square.
+
+                Args:
+                    input (Tensor): A tensor of shape (N, C, H, W) that contains features map on a H x W grid.
+                    point_coords (Tensor): A tensor of shape (N, P, 2) or (N, Hgrid, Wgrid, 2) that contains
+                    [0, 1] x [0, 1] normalized point coordinates.
+
+                Returns:
+                    output (Tensor): A tensor of shape (N, C, P) or (N, C, Hgrid, Wgrid) that contains
+                        features for points in `point_coords`. The features are obtained via bilinear
+                        interplation from `input` the same way as :function:`torch.nn.functional.grid_sample`.
+                """
+                add_dim = False
+                if point_coords.dim() == 3:
+                    add_dim = True
+                    point_coords = point_coords.unsqueeze(2)
+                output = F.grid_sample(input, 2.0 * point_coords - 1.0, **kwargs)
+                if add_dim:
+                    output = output.squeeze(3)
+                return output
+
+            def batch_dice_loss(inputs: torch.Tensor, targets: torch.Tensor):
+                """
+                Compute the DICE loss, similar to generalized IOU for masks
+                Args:
+                    inputs: A float tensor of arbitrary shape.
+                            The predictions for each example.
+                    targets: A float tensor with the same shape as inputs. Stores the binary
+                            classification label for each element in inputs
+                            (0 for the negative class and 1 for the positive class).
+                """
+                inputs = inputs.sigmoid()
+                inputs = inputs.flatten(1)
+                numerator = 2 * torch.einsum("nc,mc->nm", inputs, targets)
+                denominator = inputs.sum(-1)[:, None] + targets.sum(-1)[None, :]
+                loss = 1 - (numerator + 1) / (denominator + 1)
+                return loss
+
+            def batch_sigmoid_ce_loss(inputs: torch.Tensor, targets: torch.Tensor):
+                """
+                Args:
+                    inputs: A float tensor of arbitrary shape.
+                            The predictions for each example.
+                    targets: A float tensor with the same shape as inputs. Stores the binary
+                            classification label for each element in inputs
+                            (0 for the negative class and 1 for the positive class).
+                Returns:
+                    Loss tensor
+                """
+                hw = inputs.shape[1]
+
+                pos = F.binary_cross_entropy_with_logits(
+                    inputs, torch.ones_like(inputs), reduction="none"
+                )
+                neg = F.binary_cross_entropy_with_logits(
+                    inputs, torch.zeros_like(inputs), reduction="none"
+                )
+
+                loss = torch.einsum("nc,mc->nm", pos, targets) + torch.einsum(
+                    "nc,mc->nm", neg, (1 - targets)
+                )
+
+                return loss / hw
+
+            batch_dice_loss_jit = torch.jit.script(batch_dice_loss)
+            batch_sigmoid_ce_loss_jit = torch.jit.script(batch_sigmoid_ce_loss)
+            cost_mask = torch.tensor(0).to(out_bbox)
+            cost_dice = torch.tensor(0).to(out_bbox)
+            for b in range(bs):
+                out_mask = outputs["pred_masks"][b]
+                tgt_mask = targets[b]["masks"].to(out_mask)
+
+                out_mask = out_mask[:, None]
+                tgt_mask = tgt_mask[:, None]
+                point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
+                tgt_mask = point_sample(
+                    tgt_mask,
+                    point_coords.repeat(tgt_mask.shape[0], 1, 1),
+                    align_corners=False,
+                ).squeeze(1)
+
+                out_mask = point_sample(
+                    out_mask,
+                    point_coords.repeat(out_mask.shape[0], 1, 1),
+                    align_corners=False,
+                ).squeeze(1)
+
+                with torch.autocast(enabled=False, device_type=outputs.device):
+                    out_mask = out_mask.float()
+                    tgt_mask = tgt_mask.float()
+                    if out_mask.shape[0] == 0 or tgt_mask.shape[0] == 0:
+                        cost_mask = batch_sigmoid_ce_loss(out_mask, tgt_mask)
+                        cost_dice = batch_dice_loss(out_mask, tgt_mask)
+                    else:
+                        cost_mask = batch_sigmoid_ce_loss_jit(out_mask, tgt_mask)
+                        cost_dice = batch_dice_loss_jit(out_mask, tgt_mask)
+        else:
+            cost_mask = torch.tensor(0).to(out_bbox)
+            cost_dice = torch.tensor(0).to(out_bbox)
+
         C = (
             self.cost_bbox * cost_bbox
             + self.cost_class * cost_class
             + self.cost_giou * cost_giou
+            + self.cost_dice * cost_dice
+            + self.cost_mask * cost_mask
         )
         C = C.view(bs, num_queries, -1).cpu()
         C[torch.isnan(C)] = 0.0
@@ -129,7 +239,7 @@ class HungarianMatcher(nn.Module):
             indices = [
                 linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))
             ]
-        except:
+        except:  # pylint: disable=bare-except
             print("warning: use SimpleMinsumMatcher")
             indices = []
             device = C.device
@@ -171,9 +281,9 @@ class SimpleMinsumMatcher(nn.Module):
         self.cost_class = cost_class
         self.cost_bbox = cost_bbox
         self.cost_giou = cost_giou
-        assert cost_class != 0 or cost_bbox != 0 or cost_giou != 0, (
-            "all costs cant be 0"
-        )
+        assert (
+            cost_class != 0 or cost_bbox != 0 or cost_giou != 0
+        ), "all costs cant be 0"
 
         self.focal_alpha = focal_alpha
 
@@ -253,14 +363,17 @@ class SimpleMinsumMatcher(nn.Module):
 
 
 def build_matcher(args):
-    assert args.matcher_type in ["HungarianMatcher", "SimpleMinsumMatcher"], (
-        f"Unknown args.matcher_type: {args.matcher_type}"
-    )
+    assert args.matcher_type in [
+        "HungarianMatcher",
+        "SimpleMinsumMatcher",
+    ], f"Unknown args.matcher_type: {args.matcher_type}"
     if args.matcher_type == "HungarianMatcher":
         return HungarianMatcher(
             cost_class=args.set_cost_class,  # 5.0
             cost_bbox=args.set_cost_bbox,  # 1.0
             cost_giou=args.set_cost_giou,  # 0.0
+            cost_mask=args.set_cost_mask,  # 1.0
+            cost_dice=args.set_cost_dice,  # 1.0
             focal_alpha=args.focal_alpha,  # 0.25
         )
     elif args.matcher_type == "SimpleMinsumMatcher":

@@ -1,17 +1,17 @@
 {
   "train": [
     {
-      "root": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-New/images",
-      "anno": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-New/odvg_train_one.jsonl",
-      "label_map": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-New/odvg_train_label_map.json",
+      "root": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-Final/images",
+      "anno": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-Final/odvg_train.jsonl",
+      "label_map": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-Final/odvg_train_label_map.json",
       "dataset_mode": "odvg",
       "segm_masks_dir": "/mnt/storage0/Workspace/AnimalCounting/RelatedWorks/sam3/masks-retry"
     }
   ],
   "val": [
     {
-      "root": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-New/images",
-      "anno": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-New/coco_test_one.json",
+      "root": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-Final/images",
+      "anno": "/mnt/storage0/Workspace/AnimalCounting/Datasets/Animal39-Merged-Final/coco_test.json",
       "label_map": null,
       "dataset_mode": "coco",
       "segm_masks_dir": "/mnt/storage0/Workspace/AnimalCounting/RelatedWorks/sam3/masks-retry"

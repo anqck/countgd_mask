@@ -3,7 +3,7 @@ data_aug_max_size = 1333
 data_aug_scales2_resize = [400, 500, 600]
 data_aug_scales2_crop = [384, 600]
 data_aug_scale_overlap = None
-batch_size = 4
+batch_size = 2
 modelname = "groundingdino"
 backbone = "swin_B_384_22k"
 position_embedding = "sine"
@@ -46,7 +46,7 @@ fusion_dropout = 0.0
 fusion_droppath = 0.1
 sub_sentence_present = True
 max_labels = 90  # pos + neg
-lr = 0.0001  # base learning rate
+lr = 0.000005  # base learning rate
 backbone_freeze_keywords = None  # only for gdino backbone
 freeze_keywords = [
     "backbone.0",
@@ -154,7 +154,6 @@ val_label_list = [
     "American Bison",
     "Common Eland",
     "American Beaver",
-    "Cow",
     "Domestic Water Buffalo",
     "Dromedary",
     "Red Deer",
@@ -169,8 +168,10 @@ conv_dim = 256
 # sets args.backbone_layer0_channels = backbone.embed_dim
 # backbone.embed_dim determined by backbone builder functions
 backbone_layer0_channels = 128
-mask_loss_coef = 4.5
-dice_loss_coef = 4.5
+mask_loss_coef = 0.5
+dice_loss_coef = 0.5
+set_cost_mask = 1.0
+set_cost_dice = 1.0
 # Point-sampled mask loss (MaskDINO defaults)
 mask_num_points = 12544
 mask_oversample_ratio = 3.0

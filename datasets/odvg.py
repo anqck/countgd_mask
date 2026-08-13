@@ -160,7 +160,7 @@ class ODVGDataset(VisionDataset):
             target["masks"] = masks
         if len(target["labels"]) > 0:
             assert target["labels"][0] == target["labels_uncropped"][0]
-            print("asserted")
+            # print("asserted")
         # size, cap_list, caption, bboxes, labels
 
         if self.transforms is not None:

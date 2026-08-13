@@ -6,3 +6,5 @@ conda_env/**
 checkpoints/**
 *.zip
 *.sublime-project
+inference*/**
+wandb/**
