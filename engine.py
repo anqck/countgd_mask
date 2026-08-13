@@ -5,14 +5,17 @@ Train and eval functions used in main.py
 
 import math
 import os
-import random
 import sys
 from typing import Iterable
 
 import matplotlib.pyplot as plt
+import pandas as pd
 import numpy as np
 import torch
 from matplotlib.patches import Rectangle
+from PIL import Image, ImageDraw, ImageFont
+from torch.nn import functional as F
+
 
 import util.misc as utils
 from datasets.cocogrounding_eval import CocoGroundingEvaluator
@@ -20,6 +23,292 @@ from datasets.panoptic_eval import PanopticEvaluator
 from util.utils import to_device
 
 # from skimage.filters import threshold_otsu
+
+FONT_CONFIG = {
+    "regular": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "bold": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+}
+
+
+def get_xy_from_boxes(boxes, image):
+    """
+    Get box centers in image coordinates for a batch of xyxy boxes.
+    """
+    if len(boxes) == 0:
+        return np.array([]), np.array([])
+
+    w, h = image.size
+    x = w * boxes[:, 0]
+    y = h * boxes[:, 1]
+
+    return x, y
+
+
+def visualize_masks(
+    pred_masks,
+    image,
+    output_path,
+    boxes=None,
+    gt_points=None,
+    pred_count=None,
+    gt_count=None,
+    image_id=None,
+    class_name=None,
+):
+    """
+    Visualizes predicted binary masks overlaid on an input image along with predicted points,
+    ground truth points, and text info using PIL, and saves to output_path.
+
+    Parameters:
+    - pred_masks: Tensor of shape (K, H_m, W_m) or a list of such tensors.
+    - image: torch.Tensor of shape (3, H, W) or numpy array (H, W, 3) or PIL.Image.
+    - output_path: str, filepath to save the visualization.
+    - boxes: Tensor or ndarray of predicted box centers/boxes, shape (N, 4) or (N, 2).
+    - gt_points: list, Tensor, or ndarray of ground truth points [[x, y], ...].
+    - pred_count: int, predicted object count.
+    - gt_count: int, ground truth object count.
+    - image_id: str or int, identifier of the image.
+    - class_name: str, class name or category label.
+    """
+    if isinstance(pred_masks, list):
+        if len(pred_masks) == 0:
+            pred_masks = None
+        else:
+            pred_masks = pred_masks[-1]
+
+    if isinstance(pred_masks, torch.Tensor):
+        pred_masks = pred_masks.detach().cpu()
+
+    # Convert input image to PIL RGBA Image
+    if isinstance(image, torch.Tensor):
+        img_np = image.detach().cpu().float().numpy()
+        if img_np.ndim == 3 and img_np.shape[0] in (1, 3):
+            img_np = np.transpose(img_np, (1, 2, 0))
+        if img_np.max() > 1.0 or img_np.min() < 0.0:
+            img_min, img_max = img_np.min(), img_np.max()
+            if img_max > img_min:
+                img_np = (img_np - img_min) / (img_max - img_min)
+            else:
+                img_np = np.clip(img_np, 0.0, 1.0)
+        img_uint8 = (img_np * 255).astype(np.uint8)
+        base_img = Image.fromarray(img_uint8).convert("RGBA")
+    elif isinstance(image, np.ndarray):
+        img_np = image
+        if img_np.max() <= 1.0:
+            img_np = (img_np * 255).astype(np.uint8)
+        base_img = Image.fromarray(img_np.astype(np.uint8)).convert("RGBA")
+    elif isinstance(image, Image.Image):
+        base_img = image.convert("RGBA")
+    else:
+        return
+
+    w_img, h_img = base_img.size
+
+    # 1. Overlay predicted masks if present
+    if pred_masks is not None and pred_masks.numel() > 0 and pred_masks.shape[0] > 0:
+        if pred_masks.ndim == 3:
+            masks_tensor = pred_masks.unsqueeze(0).float()
+            if (masks_tensor.shape[-2], masks_tensor.shape[-1]) != (h_img, w_img):
+                masks_tensor = F.interpolate(
+                    masks_tensor,
+                    size=(h_img, w_img),
+                    mode="bilinear",
+                    align_corners=False,
+                )
+            masks_tensor = masks_tensor.squeeze(0)
+
+            prob_masks = (
+                masks_tensor.sigmoid() if masks_tensor.min() < 0.0 else masks_tensor
+            )
+            binary_masks = (prob_masks > 0.8).numpy()
+
+            num_masks = binary_masks.shape[0]
+            palette = [
+                (255, 59, 48),  # Red
+                (52, 199, 89),  # Green
+                (0, 122, 255),  # Blue
+                (255, 149, 0),  # Orange
+                (175, 82, 222),  # Purple
+                (255, 204, 0),  # Yellow
+                (85, 190, 240),  # Cyan
+                (255, 45, 85),  # Pink
+                (162, 132, 94),  # Brown
+                (142, 142, 147),  # Gray
+            ]
+
+            for m_idx in range(num_masks):
+                m = binary_masks[m_idx]
+                if m.any():
+                    color = palette[m_idx % len(palette)]
+                    mask_layer_np = np.zeros((h_img, w_img, 4), dtype=np.uint8)
+                    mask_layer_np[m, 0:3] = color
+                    mask_layer_np[m, 3] = 128  # 50% alpha transparency
+                    mask_layer_img = Image.fromarray(mask_layer_np, mode="RGBA")
+                    comp_img = Image.alpha_composite(base_img, mask_layer_img)
+                    base_img.close()
+                    mask_layer_img.close()
+                    base_img = comp_img
+
+    # 2. Point and Text Visualisation (integrated from vis_v4.py)
+    scale = max(w_img, h_img) / 1000.0
+    r = max(1, int(4 * scale))
+
+    font_size_text = max(12, int(14 * scale))
+    font_size_markers = max(10, int(12 * scale))
+
+    try:
+        font_text = ImageFont.truetype(FONT_CONFIG["regular"], size=font_size_text)
+        font_marker = ImageFont.truetype(FONT_CONFIG["bold"], size=font_size_markers)
+    except IOError:
+        font_text = ImageFont.load_default()
+        font_marker = ImageFont.load_default()
+
+    # (a) Lowest Pred Layer (Semi-transparent Red 'x' markers)
+    if boxes is not None and len(boxes) > 0:
+        if isinstance(boxes, torch.Tensor):
+            boxes_np = boxes.detach().cpu().numpy()
+        else:
+            boxes_np = np.array(boxes)
+
+        if boxes_np.ndim == 2 and boxes_np.shape[0] > 0:
+            x_pred, y_pred = get_xy_from_boxes(boxes_np, base_img)
+
+            pred_layer = Image.new("RGBA", (w_img, h_img), (0, 0, 0, 0))
+            draw_pred = ImageDraw.Draw(pred_layer)
+            for x, y in zip(x_pred, y_pred):
+                draw_pred.text(
+                    (x, y), "x", fill=(255, 0, 0, 255), font=font_marker, anchor="mm"
+                )
+            comp_img = Image.alpha_composite(base_img, pred_layer)
+            base_img.close()
+            pred_layer.close()
+            base_img = comp_img
+
+    # (b) Lower GT Layer (Semi-transparent Blue circles)
+    if gt_points is not None and len(gt_points) > 0:
+        if isinstance(gt_points, torch.Tensor):
+            gt_points_np = gt_points.detach().cpu().numpy()
+        else:
+            gt_points_np = np.array(gt_points)
+
+        if gt_points_np.ndim == 2 and gt_points_np.shape[0] > 0:
+            gt_pts = gt_points_np.copy()
+            # If normalized coordinates (0..1), scale to pixel coordinates
+            if (
+                gt_pts[:, 0].max() <= 1.0
+                and gt_pts[:, 1].max() <= 1.0
+                and w_img > 1
+                and h_img > 1
+            ):
+                gt_pts[:, 0] *= w_img
+                gt_pts[:, 1] *= h_img
+
+            gt_layer = Image.new("RGBA", (w_img, h_img), (0, 0, 0, 0))
+            draw_gt = ImageDraw.Draw(gt_layer)
+            for x, y in gt_pts:
+                draw_gt.ellipse([x - r, y - r, x + r, y + r], fill=(0, 0, 255, 128))
+            comp_img = Image.alpha_composite(base_img, gt_layer)
+            base_img.close()
+            gt_layer.close()
+            base_img = comp_img
+
+    # (c) Highest Layer (Opaque Top-Left and Top-Right Info Text)
+    if (
+        image_id is not None
+        or class_name is not None
+        or pred_count is not None
+        or gt_count is not None
+    ):
+        text_layer = Image.new("RGBA", (w_img, h_img), (0, 0, 0, 0))
+        draw_text_layer = ImageDraw.Draw(text_layer)
+
+        # Render Top Left Info
+        img_id_str = str(image_id) if image_id is not None else ""
+        cls_str = str(class_name) if class_name is not None else ""
+        left_text = f"{img_id_str}|{cls_str}".strip()
+        if left_text and left_text != "|":
+            draw_text_layer.text(
+                (int(0.02 * w_img), int(0.02 * h_img)),
+                left_text,
+                fill=(0, 0, 0, 255),
+                font=font_text,
+            )
+
+        # Render Top Right Info
+        if gt_count is not None:
+            gt_text = f"GT:{gt_count}"
+            gt_w = draw_text_layer.textlength(gt_text, font=font_text)
+            draw_text_layer.text(
+                (w_img - gt_w - int(0.02 * w_img), int(0.02 * h_img)),
+                gt_text,
+                fill=(0, 0, 255, 255),
+                font=font_text,
+            )
+
+        if pred_count is not None:
+            pred_text = f"Pred:{pred_count}"
+            pred_w = draw_text_layer.textlength(pred_text, font=font_text)
+            draw_text_layer.text(
+                (
+                    w_img - pred_w - int(0.02 * w_img),
+                    int(0.02 * h_img) + font_size_text + 4,
+                ),
+                pred_text,
+                fill=(255, 0, 0, 255),
+                font=font_text,
+            )
+
+        comp_img = Image.alpha_composite(base_img, text_layer)
+        base_img.close()
+        text_layer.close()
+        base_img = comp_img
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    rgb_final = base_img.convert("RGB")
+    rgb_final.save(output_path)
+    base_img.close()
+    rgb_final.close()
+
+
+def make_interval_nested(df, intervals):
+    """
+    Iterates through flexible interval boundaries to group filenames by class.
+
+    Parameters:
+    - df: pd.DataFrame containing 'gt_cnt' column
+    - intervals: List of tuples representing intervals, e.g., [(2, 5), (3,), (None, 4), (2, -1)].
+    """
+    for interval in intervals:
+        # Extract boundaries supporting variable tuple lengths
+        low = interval[0] if len(interval) > 0 else None
+        high = interval[1] if len(interval) > 1 else None
+
+        # Initialize an all-True Boolean mask matching the DataFrame index
+        mask = pd.Series(True, index=df.index)
+
+        # Apply lower bound constraint if present and valid
+        if low is not None and low != -1:
+            mask &= df["gt_cnt"] >= low
+
+        # Apply upper bound constraint if present and valid
+        if high is not None and high != -1:
+            mask &= df["gt_cnt"] <= high
+
+        # Generate the tracking label based on the active constraints
+        is_low_bound = low is not None and low != -1
+        is_high_bound = high is not None and high != -1
+
+        if is_low_bound and is_high_bound:
+            label = f"{low}-{high}"
+        elif is_low_bound:
+            label = f">={low}"
+        elif is_high_bound:
+            label = f"<={high}"
+        else:
+            label = "unbounded"
+
+        # Filter the target DataFrame using the compiled mask
+        yield label, df[mask]
 
 
 def train_one_epoch(
@@ -150,7 +439,7 @@ def train_one_epoch(
 
 
 def plot_points(image, exemplars, size, points):
-    (h, w) = (size[0], size[1])
+    h, w = (size[0], size[1])
     for point in points:
         in_exemp = (point[0] * w > exemplars[:, 0]) * (point[0] * w < exemplars[:, 2])
         in_exemp = (
@@ -179,7 +468,7 @@ def plot_points(image, exemplars, size, points):
 
 def tt_norm(pred_cnt, exemplars, size, points):
     e_cnt = 0
-    (h, w) = (size[0], size[1])
+    h, w = (size[0], size[1])
     for point in points:
         in_exemp = (point[0] * w > exemplars[:, 0]) * (point[0] * w < exemplars[:, 2])
         in_exemp = (
@@ -198,67 +487,95 @@ def tt_norm(pred_cnt, exemplars, size, points):
 
 def get_count_errs(
     samples,
-    exemplars,
+    _exemplars,
     outputs,
     box_threshold,
     text_threshold,
     targets,
     tokenized_captions,
-    input_captions,
+    _input_captions,
+    counts=None,
+    count_output_state_dict=None,
 ):
+    # pylint: disable=consider-using-enumerate
     logits = outputs["pred_logits"].sigmoid()
     boxes = outputs["pred_boxes"]
-    np.save("logits.npy", logits.cpu().numpy())
+    masks = outputs.get("pred_masks", None)
     samples = samples.to_img_list()
-    sizes = [target["size"] for target in targets]
 
     abs_errs = []
     for sample_ind in range(len(targets)):
         sample_logits = logits[sample_ind]
         sample_boxes = boxes[sample_ind]
-        input_caption = input_captions[sample_ind]
-        sample = samples[sample_ind]
-        size = sizes[sample_ind]
-        sample_exemplars = exemplars[sample_ind]
+        sample_masks = masks[sample_ind] if masks is not None else None
 
-        # Setting adaptive logit threshold based on Otsu's binarization algo.
-        # max_logits = sample_logits.max(dim=-1).values.cpu().numpy()
-        # box_threshold = threshold_otsu(max_logits)
-
+        end_idx = 0
         for token_ind in range(len(tokenized_captions["input_ids"][sample_ind])):
             idx = tokenized_captions["input_ids"][sample_ind][token_ind]
-            print(idx)
             if idx == 1012:
                 end_idx = token_ind
                 break
 
         box_mask = sample_logits.max(dim=-1).values > box_threshold
-        expected_cnt = sample_logits.max(dim=-1).values.sum().item()
-        expected_cnt = sample_logits[:, 1:end_idx].mean(dim=-1).sum().item()
         sample_logits = sample_logits[box_mask, :]
         sample_boxes = sample_boxes[box_mask, :]
+        if sample_masks is not None:
+            sample_masks = sample_masks[box_mask]
 
         text_mask = (sample_logits[:, 1:end_idx] > text_threshold).sum(dim=-1) == (
             end_idx - 1
         )
         sample_logits = sample_logits[text_mask, :]
         sample_boxes = sample_boxes[text_mask, :]
-        # if 'sunglass' in input_caption:
-        # plot_points(renorm(sample.cpu()).permute(1, 2, 0).numpy(), sample_exemplars.cpu().numpy(), size.cpu().numpy(), sample_boxes[:,:2].cpu().numpy())
+        if sample_masks is not None:
+            sample_masks = sample_masks[text_mask]
 
         gt_count = targets[sample_ind]["labels"].shape[0]
         pred_cnt = sample_logits.shape[0]
-        # pred_cnt = tt_norm(pred_cnt, sample_exemplars.cpu().numpy(), size.cpu().numpy(), sample_boxes[:, :2].cpu().numpy())
-        # pred_cnt = expected_cnt
-        # pred_cnt = expected_cnt
-        if pred_cnt == 0:
-            print("All query logits: " + str(logits[sample_ind]))
-            print("First query logit: " + str(logits[sample_ind][0]))
-            print("tokenized caption: " + str(tokenized_captions["input_ids"]))
-        # pred_cnt = expected_cnt
-        print("Pred Count: " + str(pred_cnt) + ", GT Count: " + str(gt_count))
+
+        if counts is not None:
+            counts.append((pred_cnt, gt_count))
+
+        if count_output_state_dict is not None:
+            sample_scores = sample_logits.max(dim=-1).values
+            count_info = torch.cat((sample_boxes, sample_scores.unsqueeze(-1)), dim=1)
+
+            if "count_info" not in count_output_state_dict:
+                count_output_state_dict["count_info"] = []
+            if "image_ids" not in count_output_state_dict:
+                count_output_state_dict["image_ids"] = []
+            if "pred_cnt" not in count_output_state_dict:
+                count_output_state_dict["pred_cnt"] = []
+            if "gt_cnt" not in count_output_state_dict:
+                count_output_state_dict["gt_cnt"] = []
+            if "pred_masks" not in count_output_state_dict:
+                count_output_state_dict["pred_masks"] = []
+
+            count_output_state_dict["count_info"].append(count_info.cpu())
+            count_output_state_dict["image_ids"].append(
+                int(targets[sample_ind]["image_id"].item())
+            )
+            count_output_state_dict["pred_cnt"].append(pred_cnt)
+            count_output_state_dict["gt_cnt"].append(gt_count)
+            if sample_masks is not None:
+                count_output_state_dict["pred_masks"].append(sample_masks.cpu())
+            else:
+                count_output_state_dict["pred_masks"].append(
+                    torch.zeros((gt_count, 300, 300))
+                )
+
+        # print("Pred Count: " + str(pred_cnt) + ", GT Count: " + str(gt_count))
         abs_errs.append(np.abs(gt_count - pred_cnt))
     return abs_errs
+
+
+def parse_results_and_dataset(result, _):
+    rows = []
+    print(*map(len, [result["image_ids"], result["pred_cnt"], result["gt_cnt"]]))
+    for i, k, v in zip(result["image_ids"], result["pred_cnt"], result["gt_cnt"]):
+        rows.append((i, k, v))
+
+    return rows
 
 
 @torch.no_grad()
@@ -270,7 +587,7 @@ def evaluate(
     data_loader,
     base_ds,
     device,
-    output_dir,
+    output_dir: str,
     wo_class_error=False,
     *,
     args,
@@ -311,13 +628,12 @@ def evaluate(
 
     _cnt = 0
     output_state_dict = {}  # for debug only
+    count_output_state_dict = {}
 
     if args.use_coco_eval:
         from pycocotools.coco import COCO
 
         coco = COCO(args.coco_val_path)
-
-        # 获取所有类别
         category_dict = coco.loadCats(coco.getCatIds())
         cat_list = [item["name"] for item in category_dict]
     else:
@@ -326,6 +642,7 @@ def evaluate(
     print("Input text prompt:", caption)
 
     abs_errs = []
+    counts = []
     for samples, targets in metric_logger.log_every(
         data_loader, 10, header, logger=logger
     ):
@@ -338,7 +655,7 @@ def evaluate(
 
         _bs = samples.tensors.shape[0]
         input_captions = [cat_list[target["labels"][0]] + " ." for target in targets]
-        print("input_captions: " + str(input_captions))
+        # print("input_captions: " + str(input_captions))
         with torch.amp.autocast("cuda", enabled=args.amp):
             outputs = model(
                 samples,
@@ -357,7 +674,60 @@ def evaluate(
             targets,
             tokenized_captions,
             input_captions,
+            counts,
+            count_output_state_dict,
         )
+        counts[-1] = (targets[0]["image_id"].item(),) + counts[-1]
+
+        if args.eval and args.save_results:
+            img_list = samples.to_img_list()
+            for sample_ind, tgt in enumerate(targets):
+                img_id: int = tgt["image_id"].item()
+                out_dir: str = (
+                    output_dir or getattr(args, "output_dir", ".") or "."
+                ) + "/masks-vis"
+                out_filename = os.path.join(out_dir, f"mask_{int(img_id)}.png")
+                batch_relative_idx = sample_ind - len(targets)
+                sample_pred_masks = count_output_state_dict["pred_masks"][
+                    batch_relative_idx
+                ]
+                sample_count_info = count_output_state_dict["count_info"][
+                    batch_relative_idx
+                ]
+                sample_boxes = (
+                    sample_count_info[:, :4]
+                    if sample_count_info is not None and sample_count_info.numel() > 0
+                    else None
+                )
+                sample_pred_cnt = count_output_state_dict["pred_cnt"][
+                    batch_relative_idx
+                ]
+                sample_gt_cnt = count_output_state_dict["gt_cnt"][batch_relative_idx]
+
+                class_name = tgt.get("class_name", "")
+                if not class_name and "labels" in tgt and len(tgt["labels"]) > 0:
+                    cat_idx = tgt["labels"][0].item()
+                    if cat_idx < len(cat_list):
+                        class_name = cat_list[cat_idx]
+
+                gt_points = None
+                if "points" in tgt:
+                    gt_points = tgt["points"]
+                elif "point" in tgt:
+                    gt_points = tgt["point"]
+                elif "boxes" in tgt:
+                    gt_points = tgt["boxes"][:, :2]
+                visualize_masks(
+                    sample_pred_masks,
+                    img_list[sample_ind],
+                    out_filename,
+                    boxes=sample_boxes,
+                    gt_points=gt_points,
+                    pred_count=sample_pred_cnt,
+                    gt_count=sample_gt_cnt,
+                    image_id=img_id,
+                    class_name=class_name,
+                )
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
 
         results = postprocessors["bbox"](outputs, orig_target_sizes)
@@ -390,16 +760,13 @@ def evaluate(
 
         if args.save_results:
             for _, (tgt, res) in enumerate(zip(targets, results)):
-                """
-                pred vars:
-                    K: number of bbox pred
-                    score: Tensor(K),
-                    label: list(len: K),
-                    bbox: Tensor(K, 4)
-                    idx: list(len: K)
-                tgt: dict.
-
-                """
+                # pred vars:
+                #     K: number of bbox pred
+                #     score: Tensor(K),
+                #     label: list(len: K),
+                #     bbox: Tensor(K, 4)
+                #     idx: list(len: K)
+                # tgt: dict.
                 # compare gt and res (after postprocess)
                 gt_bbox = tgt["boxes"]
                 gt_label = tgt["labels"]
@@ -427,6 +794,58 @@ def evaluate(
     count_rmse = (np.array(abs_errs) ** 2).mean() ** (1 / 2)
     print("# of Images Tested: " + str(len(abs_errs)))
     print("MAE: " + str(count_mae) + ", RMSE: " + str(count_rmse))
+
+    frame = pd.DataFrame(
+        counts,
+        columns=["image_id", "pred_cnt", "gt_cnt"],
+    )
+    target_intervals = [(1, 5), (6, 10), (11, 20), (21, 40), (41,)]
+    headers = []
+    values = []
+
+    def calc_mae(gt, pred):
+        return np.average(np.abs(np.array(gt) - np.array(pred)))
+
+    def calc_rmse(gt, pred):
+        return np.sum((np.array(pred) - np.array(gt)) ** 2 / len(gt)) ** 0.5
+
+    for label, sub_df in make_interval_nested(frame, target_intervals):
+        headers.append(label)
+        print(f"Calculating MAE, RMSE {label}. {len(sub_df['gt_cnt'].values)} images")
+        if len(sub_df) > 0:
+            val_mae = calc_mae(sub_df["gt_cnt"].values, sub_df["pred_cnt"].values)
+            val_rmse = calc_rmse(sub_df["gt_cnt"].values, sub_df["pred_cnt"].values)
+            values.append((val_mae, val_rmse))
+        else:
+            values.append((0.0, 0.0))
+
+    current_bins = []
+    current_metrics = []
+    for b, m in zip(headers, values):
+        temp_bins = current_bins + [b]
+        temp_metrics = current_metrics + [m]
+        h_line = "".join(f"{x}\t\t" for x in temp_bins).rstrip("\t")
+        m_line = "".join(f"{y[0]:.4f}\t{y[1]:.4f}\t" for y in temp_metrics).rstrip("\t")
+        if len(current_bins) > 0 and (
+            len(h_line.expandtabs(8)) > 80 or len(m_line.expandtabs(8)) > 80
+        ):
+            print("".join(f"{x}\t\t" for x in current_bins).rstrip("\t"))
+            print(
+                "".join(f"{y[0]:.4f}\t{y[1]:.4f}\t" for y in current_metrics).rstrip(
+                    "\t"
+                )
+            )
+            current_bins = [b]
+            current_metrics = [m]
+        else:
+            current_bins = temp_bins
+            current_metrics = temp_metrics
+    if current_bins:
+        print("".join(f"{x}\t\t" for x in current_bins).rstrip("\t"))
+        print(
+            "".join(f"{y[0]:.4f}\t{y[1]:.4f}\t" for y in current_metrics).rstrip("\t")
+        )
+
     if args.save_results:
         import os.path as osp
 
@@ -467,4 +886,10 @@ def evaluate(
         stats["PQ_th"] = panoptic_res["Things"]
         stats["PQ_st"] = panoptic_res["Stuff"]
 
-    return count_mae, stats, coco_evaluator
+    bins_result = {
+        f"{h}_{suffix}": val
+        for h, (mae, rmse) in zip(headers, values)
+        for suffix, val in (("MAE", mae), ("RMSE", rmse))
+    }
+
+    return bins_result, count_mae, count_rmse, stats, coco_evaluator
