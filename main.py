@@ -23,6 +23,8 @@ from util.logger import setup_logger
 from util.slconfig import DictAction, SLConfig
 from util.utils import BestMetricHolder
 
+import wandb
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser("Set transformer detector", add_help=False)
@@ -82,6 +84,7 @@ def get_args_parser():
         "--local-rank", type=int, help="local rank for DistributedDataParallel"
     )
     parser.add_argument("--amp", action="store_true", help="Train with mixed precision")
+    parser.add_argument("--wandb", action="store_true")
     return parser
 
 
@@ -96,9 +99,33 @@ def build_model_main(args):
     return model, criterion, postprocessors
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
+    """
+    Main
+    """
+    # utils.setup_distributed(args)
+    print("Not using distributed mode")
+    args.distributed = False
+    args.world_size = 1
+    args.rank = 0
+    args.local_rank = 0
 
-    utils.setup_distributed(args)
+    if args.wandb:
+        run = wandb.init(
+            # Set the wandb entity where your project will be logged (generally your team name).
+            entity="anqck-counting-00",
+            # Set the wandb project where this run will be logged.
+            project="AnimalCounting39_CountGD",
+            # Track hyperparameters and run metadata.
+            config=args,
+        )
+        args.output_dir = os.path.join(args.output_dir, run.name)
+
+        run.define_metric("val_mae", summary="min")
+        run.define_metric("val_rmse", summary="min")
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
     # load cfg file and update the args
     print("Loading config file from {}".format(args.config_file))
     time.sleep(args.rank * 0.02)
@@ -132,22 +159,22 @@ def main(args):
         name="detr",
     )
 
-    logger.info("git:\n  {}\n".format(utils.get_sha()))
+    # logger.info("git:\n  {}\n".format(utils.get_sha()))
     logger.info("Command: " + " ".join(sys.argv))
     if args.rank == 0:
         save_json_path = os.path.join(args.output_dir, "config_args_all.json")
         with open(save_json_path, "w") as f:
             json.dump(vars(args), f, indent=2)
-        logger.info("Full config saved to {}".format(save_json_path))
+        # logger.info("Full config saved to {}".format(save_json_path))
 
     with open(args.datasets) as f:
         dataset_meta = json.load(f)
     if args.use_coco_eval:
         args.coco_val_path = dataset_meta["val"][0]["anno"]
 
-    logger.info("world size: {}".format(args.world_size))
-    logger.info("rank: {}".format(args.rank))
-    logger.info("local_rank: {}".format(args.local_rank))
+    # logger.info("world size: {}".format(args.world_size))
+    # logger.info("rank: {}".format(args.rank))
+    # logger.info("local_rank: {}".format(args.local_rank))
     logger.info("args: " + str(args) + "\n")
 
     device = torch.device(args.device)
@@ -172,13 +199,13 @@ def main(args):
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info("number of params:" + str(n_parameters))
-    logger.info(
-        "params before freezing:\n"
-        + json.dumps(
-            {n: p.numel() for n, p in model.named_parameters() if p.requires_grad},
-            indent=2,
-        )
-    )
+    # logger.info(
+    #     "params before freezing:\n"
+    #     + json.dumps(
+    #         {n: p.numel() for n, p in model.named_parameters() if p.requires_grad},
+    #         indent=2,
+    #     )
+    # )
 
     param_dicts = get_param_dict(args, model_without_ddp)
 
@@ -308,8 +335,8 @@ def main(args):
         )
 
     output_dir = Path(args.output_dir)
-    if os.path.exists(os.path.join(args.output_dir, "checkpoint.pth")):
-        args.resume = os.path.join(args.output_dir, "checkpoint.pth")
+    # if os.path.exists(os.path.join(args.output_dir, "checkpoint.pth")):
+    #     args.resume = os.path.join(args.output_dir, "checkpoint.pth")
     if args.resume:
         if args.resume.startswith("https"):
             checkpoint = torch.hub.load_state_dict_from_url(
@@ -359,7 +386,7 @@ def main(args):
 
     if args.eval:
         os.environ["EVAL_FLAG"] = "TRUE"
-        count_mae, test_stats, coco_evaluator = evaluate(
+        bins_result, val_mae, val_rmse, test_stats, coco_evaluator = evaluate(
             model,
             model_without_ddp,
             criterion,
@@ -386,7 +413,7 @@ def main(args):
     print("Start training")
     start_time = time.time()
     best_map_holder = BestMetricHolder(init_res=100.0, better="small", use_ema=False)
-
+    args.start_epoch = 0
     for epoch in range(args.start_epoch, args.epochs):
         epoch_start_time = time.time()
         if args.distributed:
@@ -429,7 +456,7 @@ def main(args):
                 utils.save_on_master(weights, checkpoint_path)
 
         # eval
-        val_mae, test_stats, coco_evaluator = evaluate(
+        bins_result, val_mae, val_rmse, test_stats, coco_evaluator = evaluate(
             model,
             model_without_ddp,
             criterion,
@@ -459,6 +486,15 @@ def main(args):
             **{f"train_{k}": v for k, v in train_stats.items()},
             **{f"test_{k}": v for k, v in test_stats.items()},
         }
+        if args.wandb:
+            run.log(
+                {
+                    **bins_result,
+                    **train_stats,
+                    "val_mae": val_mae,
+                    "val_rmse": val_rmse,
+                }
+            )
 
         try:
             log_stats.update({"now_time": str(datetime.datetime.now())})
