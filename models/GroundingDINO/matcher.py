@@ -23,6 +23,79 @@ from torch import nn
 from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
 
 
+def point_sample(input, point_coords, **kwargs) -> torch.Tensor:
+    # Input: input: [N, C, H, W]
+    # Input: point_coords: [N, P, 2]
+    add_dim = False
+    if point_coords.dim() == 3:
+        add_dim = True
+        # Input: point_coords.unsqueeze(2)
+        # [N, P, 2] -> [N, P, 1, 2]
+        point_coords = point_coords.unsqueeze(2)
+
+    # Input: 2.0 * point_coords - 1.0
+    # [N, P, 1, 2]
+    # F.grid_sample output:
+    # [N, C, P, 1]
+    output = F.grid_sample(input, 2.0 * point_coords - 1.0, **kwargs)
+
+    if add_dim:
+        # Input: output.squeeze(3)
+        # [N, C, P, 1] -> [N, C, P]
+        output = output.squeeze(3)
+
+    return output
+
+
+def batch_dice_loss(inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    # Input: inputs: [nq, P]
+    # Input: targets: [T, P]
+    inputs = inputs.sigmoid()  # [nq, P]
+    inputs = inputs.flatten(1)  # [nq, P]
+
+    # Input: einsum("nc,mc->nm", inputs, targets)
+    # [nq, P] x [T, P] -> [nq, T]
+    numerator = 2 * torch.einsum("nc,mc->nm", inputs, targets)
+
+    # Input: inputs.sum(-1)[:, None] + targets.sum(-1)[None, :]
+    # [nq, 1] + [1, T] -> [nq, T]
+    denominator = inputs.sum(-1)[:, None] + targets.sum(-1)[None, :]
+
+    loss = 1 - (numerator + 1) / (denominator + 1)  # [nq, T]
+    return loss
+
+
+def batch_sigmoid_ce_loss(inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    # Input: inputs: [nq, P]
+    # Input: targets: [T, P]
+    hw = inputs.shape[1]  # P
+
+    # Input: binary_cross_entropy_with_logits(...)
+    # pos: [nq, P]
+    pos = F.binary_cross_entropy_with_logits(
+        inputs, torch.ones_like(inputs), reduction="none"
+    )
+    # neg: [nq, P]
+    neg = F.binary_cross_entropy_with_logits(
+        inputs, torch.zeros_like(inputs), reduction="none"
+    )
+
+    # Input: einsum("nc,mc->nm", pos, targets)
+    # [nq, P] x [T, P] -> [nq, T]
+    # Input: einsum("nc,mc->nm", neg, 1 - targets)
+    # [nq, P] x [T, P] -> [nq, T]
+    loss = torch.einsum("nc,mc->nm", pos, targets) + torch.einsum(
+        "nc,mc->nm", neg, (1 - targets)
+    )
+
+    # [nq, T]
+    return loss / hw
+
+
+batch_dice_loss_jit = torch.jit.script(batch_dice_loss)
+batch_sigmoid_ce_loss_jit = torch.jit.script(batch_sigmoid_ce_loss)
+
+
 class HungarianMatcher(nn.Module):
     """This class computes an assignment between the targets and the predictions of the network
     For efficiency reasons, the targets don't include the no_object. Because of this, in general,
@@ -78,30 +151,34 @@ class HungarianMatcher(nn.Module):
 
         bs, num_queries = outputs["pred_logits"].shape[:2]
 
-        # We flatten to compute the cost matrices in a batch
-        out_prob = (
+        # Flatten to compute cost matrices in a batch
+        out_prob: torch.Tensor = (
             outputs["pred_logits"].flatten(0, 1).sigmoid()
         )  # [batch_size * num_queries, num_classes]
         out_bbox = outputs["pred_boxes"].flatten(0, 1)  # [batch_size * num_queries, 4]
 
-        # Also concat the target labels and boxes
+        # Concat target labels and boxes
         tgt_ids = torch.cat([v["labels"] for v in targets])
         tgt_bbox = torch.cat([v["boxes"] for v in targets])
 
-        # Compute the classification cost.
+        sizes = [len(v["boxes"]) for v in targets]
+        total_targets = sum(sizes)
+
+        # Compute classification cost
         alpha = self.focal_alpha
         gamma = 2.0
 
         new_label_map = label_map[tgt_ids.cpu()]
 
-        neg_cost_class = (
+        neg_cost_class: torch.Tensor = (
             (1 - alpha) * (out_prob**gamma) * (-(1 - out_prob + 1e-8).log())
         )
-        pos_cost_class = alpha * ((1 - out_prob) ** gamma) * (-(out_prob + 1e-8).log())
-        new_label_map = new_label_map.to(pos_cost_class.device)
+        pos_cost_class: torch.Tensor = (
+            alpha * ((1 - out_prob) ** gamma) * (-(out_prob + 1e-8).log())
+        )
+        new_label_map: torch.Tensor = new_label_map.to(pos_cost_class.device)
         cost_bbox = torch.cdist(out_bbox[:, :2], tgt_bbox[:, :2], p=1)
 
-        # cost_class=(pos_cost_class @ new_label_map.T - neg_cost_class@ new_label_map.T)
         cost_class = []
         for idx_map in new_label_map:
             idx_map = idx_map / idx_map.sum()
@@ -110,88 +187,27 @@ class HungarianMatcher(nn.Module):
             cost_class = torch.stack(cost_class, dim=0).T
         else:
             cost_class = torch.zeros_like(cost_bbox)
-        # Compute the L1 cost between boxes
 
-        # Compute the giou cost betwen boxes
+        # Compute GIoU cost between boxes
         cost_giou = -generalized_box_iou(
             box_cxcywh_to_xyxy(out_bbox), box_cxcywh_to_xyxy(tgt_bbox)
         )
 
-        if self.generate_mask:
+        # Pre-allocate cost_mask and cost_dice with shape [bs, num_queries, total_targets]
+        cost_mask = torch.zeros(
+            (bs, num_queries, total_targets), device=out_bbox.device
+        )
+        cost_dice = torch.zeros(
+            (bs, num_queries, total_targets), device=out_bbox.device
+        )
 
-            def point_sample(input, point_coords, **kwargs):
-                """
-                A wrapper around :function:`torch.nn.functional.grid_sample` to support 3D point_coords tensors.
-                Unlike :function:`torch.nn.functional.grid_sample` it assumes `point_coords` to lie inside
-                [0, 1] x [0, 1] square.
-
-                Args:
-                    input (Tensor): A tensor of shape (N, C, H, W) that contains features map on a H x W grid.
-                    point_coords (Tensor): A tensor of shape (N, P, 2) or (N, Hgrid, Wgrid, 2) that contains
-                    [0, 1] x [0, 1] normalized point coordinates.
-
-                Returns:
-                    output (Tensor): A tensor of shape (N, C, P) or (N, C, Hgrid, Wgrid) that contains
-                        features for points in `point_coords`. The features are obtained via bilinear
-                        interplation from `input` the same way as :function:`torch.nn.functional.grid_sample`.
-                """
-                add_dim = False
-                if point_coords.dim() == 3:
-                    add_dim = True
-                    point_coords = point_coords.unsqueeze(2)
-                output = F.grid_sample(input, 2.0 * point_coords - 1.0, **kwargs)
-                if add_dim:
-                    output = output.squeeze(3)
-                return output
-
-            def batch_dice_loss(inputs: torch.Tensor, targets: torch.Tensor):
-                """
-                Compute the DICE loss, similar to generalized IOU for masks
-                Args:
-                    inputs: A float tensor of arbitrary shape.
-                            The predictions for each example.
-                    targets: A float tensor with the same shape as inputs. Stores the binary
-                            classification label for each element in inputs
-                            (0 for the negative class and 1 for the positive class).
-                """
-                inputs = inputs.sigmoid()
-                inputs = inputs.flatten(1)
-                numerator = 2 * torch.einsum("nc,mc->nm", inputs, targets)
-                denominator = inputs.sum(-1)[:, None] + targets.sum(-1)[None, :]
-                loss = 1 - (numerator + 1) / (denominator + 1)
-                return loss
-
-            def batch_sigmoid_ce_loss(inputs: torch.Tensor, targets: torch.Tensor):
-                """
-                Args:
-                    inputs: A float tensor of arbitrary shape.
-                            The predictions for each example.
-                    targets: A float tensor with the same shape as inputs. Stores the binary
-                            classification label for each element in inputs
-                            (0 for the negative class and 1 for the positive class).
-                Returns:
-                    Loss tensor
-                """
-                hw = inputs.shape[1]
-
-                pos = F.binary_cross_entropy_with_logits(
-                    inputs, torch.ones_like(inputs), reduction="none"
-                )
-                neg = F.binary_cross_entropy_with_logits(
-                    inputs, torch.zeros_like(inputs), reduction="none"
-                )
-
-                loss = torch.einsum("nc,mc->nm", pos, targets) + torch.einsum(
-                    "nc,mc->nm", neg, (1 - targets)
-                )
-
-                return loss / hw
-
-            batch_dice_loss_jit = torch.jit.script(batch_dice_loss)
-            batch_sigmoid_ce_loss_jit = torch.jit.script(batch_sigmoid_ce_loss)
-            cost_mask = torch.tensor(0).to(out_bbox)
-            cost_dice = torch.tensor(0).to(out_bbox)
+        if self.generate_mask and total_targets > 0:
+            tgt_idx = 0
             for b in range(bs):
+                num_tgt = sizes[b]
+                if num_tgt == 0:
+                    continue
+
                 out_mask = outputs["pred_masks"][b]
                 tgt_mask = targets[b]["masks"].to(out_mask)
 
@@ -210,18 +226,23 @@ class HungarianMatcher(nn.Module):
                     align_corners=False,
                 ).squeeze(1)
 
-                with torch.autocast(enabled=False, device_type=outputs.device):
+                with torch.autocast(enabled=False, device_type=out_mask.device.type):
                     out_mask = out_mask.float()
                     tgt_mask = tgt_mask.float()
-                    if out_mask.shape[0] == 0 or tgt_mask.shape[0] == 0:
-                        cost_mask = batch_sigmoid_ce_loss(out_mask, tgt_mask)
-                        cost_dice = batch_dice_loss(out_mask, tgt_mask)
+                    if out_mask.shape[0] == 0:
+                        mask_l = batch_sigmoid_ce_loss(out_mask, tgt_mask)
+                        dice_l = batch_dice_loss(out_mask, tgt_mask)
                     else:
-                        cost_mask = batch_sigmoid_ce_loss_jit(out_mask, tgt_mask)
-                        cost_dice = batch_dice_loss_jit(out_mask, tgt_mask)
-        else:
-            cost_mask = torch.tensor(0).to(out_bbox)
-            cost_dice = torch.tensor(0).to(out_bbox)
+                        mask_l = batch_sigmoid_ce_loss_jit(out_mask, tgt_mask)
+                        dice_l = batch_dice_loss_jit(out_mask, tgt_mask)
+
+                cost_mask[b, :, tgt_idx : tgt_idx + num_tgt] = mask_l
+                cost_dice[b, :, tgt_idx : tgt_idx + num_tgt] = dice_l
+                tgt_idx += num_tgt
+
+        # Flatten (bs, num_queries) -> (bs * num_queries)
+        cost_mask = cost_mask.flatten(0, 1)
+        cost_dice = cost_dice.flatten(0, 1)
 
         C = (
             self.cost_bbox * cost_bbox
@@ -234,7 +255,6 @@ class HungarianMatcher(nn.Module):
         C[torch.isnan(C)] = 0.0
         C[torch.isinf(C)] = 0.0
 
-        sizes = [len(v["boxes"]) for v in targets]
         try:
             indices = [
                 linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))
