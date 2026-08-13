@@ -123,6 +123,7 @@ def visualize_masks(
             binary_masks = (prob_masks > 0.8).numpy()
 
             num_masks = binary_masks.shape[0]
+            print(f"Number of masks prediced {num_masks=}")
             palette = [
                 (255, 59, 48),  # Red
                 (52, 199, 89),  # Green
@@ -496,11 +497,15 @@ def get_count_errs(
     _input_captions,
     counts=None,
     count_output_state_dict=None,
+    save_masks: bool = False,
 ):
     # pylint: disable=consider-using-enumerate
     logits = outputs["pred_logits"].sigmoid()
     boxes = outputs["pred_boxes"]
-    masks = outputs.get("pred_masks", None)
+    if save_masks:
+        masks = outputs.get("pred_masks", None)
+    else:
+        masks = None
     samples = samples.to_img_list()
 
     abs_errs = []
@@ -548,7 +553,7 @@ def get_count_errs(
                 count_output_state_dict["pred_cnt"] = []
             if "gt_cnt" not in count_output_state_dict:
                 count_output_state_dict["gt_cnt"] = []
-            if "pred_masks" not in count_output_state_dict:
+            if "pred_masks" not in count_output_state_dict and save_masks:
                 count_output_state_dict["pred_masks"] = []
 
             count_output_state_dict["count_info"].append(count_info.cpu())
@@ -557,12 +562,13 @@ def get_count_errs(
             )
             count_output_state_dict["pred_cnt"].append(pred_cnt)
             count_output_state_dict["gt_cnt"].append(gt_count)
-            if sample_masks is not None:
-                count_output_state_dict["pred_masks"].append(sample_masks.cpu())
-            else:
-                count_output_state_dict["pred_masks"].append(
-                    torch.zeros((gt_count, 300, 300))
-                )
+            if save_masks:
+                if sample_masks is not None:
+                    count_output_state_dict["pred_masks"].append(sample_masks.cpu())
+                else:
+                    count_output_state_dict["pred_masks"].append(
+                        torch.zeros((gt_count, 300, 300))
+                    )
 
         # print("Pred Count: " + str(pred_cnt) + ", GT Count: " + str(gt_count))
         abs_errs.append(np.abs(gt_count - pred_cnt))
@@ -652,7 +658,6 @@ def evaluate(
         # exemplars = [t["exemplars"].to(device) for t in targets]
         _labels = [t["labels"].to(device) for t in targets]
         exemplars = [torch.tensor([]).to(device) for t in targets]
-
         _bs = samples.tensors.shape[0]
         input_captions = [cat_list[target["labels"][0]] + " ." for target in targets]
         # print("input_captions: " + str(input_captions))
@@ -676,6 +681,7 @@ def evaluate(
             input_captions,
             counts,
             count_output_state_dict,
+            args.save_results,
         )
         counts[-1] = (targets[0]["image_id"].item(),) + counts[-1]
 
