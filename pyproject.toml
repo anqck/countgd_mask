@@ -30,11 +30,8 @@ dev = [
     "pip>=26.2",
 ]
 
-[tool.ty.environment]
-python = "./.venv"
-
 [tool.uv]
-environments = ["sys_platform == 'win32'"]
+environments = ["sys_platform == 'linux'"]
 
 [[tool.uv.index]]
 url = "https://download.pytorch.org/whl/cu130"
