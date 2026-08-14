@@ -1147,8 +1147,8 @@ class SetCriterion(nn.Module):
                         "pred_logits": aux_outputs["pred_logits"][j].unsqueeze(0),
                         "pred_boxes": aux_outputs["pred_boxes"][j].unsqueeze(0),
                     }
-                    if "pred_masks" in outputs:
-                        aux_output_single["pred_masks"] = aux_outputs["pred_masks"][j].unsqueeze(0)
+                    # if "pred_masks" in outputs:
+                    #     aux_output_single["pred_masks"] = aux_outputs["pred_masks"][j].unsqueeze(0)
                     inds = self.matcher(
                         aux_output_single, [targets[j]], label_map_list[j]
                     )
@@ -1183,8 +1183,8 @@ class SetCriterion(nn.Module):
                     "pred_logits": interm_outputs["pred_logits"][j].unsqueeze(0),
                     "pred_boxes": interm_outputs["pred_boxes"][j].unsqueeze(0),
                 }
-                if "pred_masks" in outputs:
-                    interm_output_single["pred_masks"] = interm_outputs["pred_masks"][j].unsqueeze(0)
+                # if "pred_masks" in outputs:
+                #     interm_output_single["pred_masks"] = interm_outputs["pred_masks"][j].unsqueeze(0)
                 inds = self.matcher(
                     interm_output_single, [targets[j]], label_map_list[j]
                 )
@@ -1325,10 +1325,12 @@ def build_groundingdino(
         "loss_ce": args.cls_loss_coef,  # 5.0
         "loss_bbox": args.bbox_loss_coef,  # 1.0
         "loss_giou": args.giou_loss_coef,  # 0.0
+        "loss_mask": args.mask_loss_coef,
+        "loss_dice": args.dice_loss_coef
     }
-    if generate_mask:
-        weight_dict["loss_mask"] = args.mask_loss_coef
-        weight_dict["loss_dice"] = args.dice_loss_coef
+    # if generate_mask:
+
+
     clean_weight_dict = copy.deepcopy(weight_dict)
 
     if args.aux_loss:
@@ -1361,6 +1363,10 @@ def build_groundingdino(
         }
         weight_dict.update(interm_weight_dict)
 
+        weight_dict["loss_mask"] = args.mask_loss_coef
+        weight_dict["loss_dice"] = args.dice_loss_coef
+        print(weight_dict)
+        assert 1 == 0
     # Built Backbone according to config:
     # Joiner(
     #     SwinTransformer(

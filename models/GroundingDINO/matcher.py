@@ -201,7 +201,7 @@ class HungarianMatcher(nn.Module):
             (bs, num_queries, total_targets), device=out_bbox.device
         )
 
-        if self.generate_mask and total_targets > 0:
+        if "pred_masks" in outputs and total_targets > 0:
             tgt_idx = 0
             for b in range(bs):
                 num_tgt = sizes[b]
@@ -277,10 +277,26 @@ class HungarianMatcher(nn.Module):
                 cost_mask[b, :, tgt_idx : tgt_idx + num_tgt] = mask_l
                 cost_dice[b, :, tgt_idx : tgt_idx + num_tgt] = dice_l
                 tgt_idx += num_tgt
+            
+            # Flatten (bs, num_queries) -> (bs * num_queries)
+            cost_mask = cost_mask.flatten(0, 1)
+            cost_dice = cost_dice.flatten(0, 1)
 
-        # Flatten (bs, num_queries) -> (bs * num_queries)
-        cost_mask = cost_mask.flatten(0, 1)
-        cost_dice = cost_dice.flatten(0, 1)
+            C = (
+            self.cost_bbox * cost_bbox
+            + self.cost_class * cost_class
+            + self.cost_giou * cost_giou
+            + self.cost_dice * cost_dice
+            + self.cost_mask * cost_mask
+            )
+        else:
+            C = (
+            self.cost_bbox * cost_bbox
+            + self.cost_class * cost_class
+            + self.cost_giou * cost_giou
+            )
+
+
 
         # print( (self.cost_bbox * cost_bbox).mean(), (self.cost_class * cost_class).mean()
         #     , (self.cost_giou * cost_giou).mean()
@@ -288,13 +304,7 @@ class HungarianMatcher(nn.Module):
         #     , (self.cost_mask * cost_mask).mean())
         # assert 1 == 2
 
-        C = (
-            self.cost_bbox * cost_bbox
-            + self.cost_class * cost_class
-            + self.cost_giou * cost_giou
-            + self.cost_dice * cost_dice
-            + self.cost_mask * cost_mask
-        )
+        
         C = C.view(bs, num_queries, -1).cpu()
         C[torch.isnan(C)] = 0.0
         C[torch.isinf(C)] = 0.0
