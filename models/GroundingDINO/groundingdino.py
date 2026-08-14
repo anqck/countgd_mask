@@ -1365,8 +1365,8 @@ def build_groundingdino(
 
         weight_dict["loss_mask"] = args.mask_loss_coef
         weight_dict["loss_dice"] = args.dice_loss_coef
-        print(weight_dict)
-        assert 1 == 0
+        # print(weight_dict)
+        # assert 1 == 0
     # Built Backbone according to config:
     # Joiner(
     #     SwinTransformer(
