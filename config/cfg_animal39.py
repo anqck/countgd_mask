@@ -171,7 +171,7 @@ backbone_layer0_channels = 128
 mask_loss_coef = 0.5
 dice_loss_coef = 0.5
 set_cost_mask = 0.0
-set_cost_dice = 1.0
+set_cost_dice = 0.5
 # Point-sampled mask loss (MaskDINO defaults)
 mask_num_points = 12544
 mask_oversample_ratio = 3.0

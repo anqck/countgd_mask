@@ -146,7 +146,8 @@ def main(args: argparse.Namespace) -> None:
         else:
             raise ValueError("Key {} can used by args only".format(k))
 
-    run.config.update(args, allow_val_change=True)
+    if args.wandb:
+        run.config.update(args, allow_val_change=True)
 
     # update some new args temporally
     if not getattr(args, "debug", None):

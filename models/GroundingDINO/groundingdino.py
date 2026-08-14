@@ -1015,6 +1015,24 @@ class SetCriterion(nn.Module):
         )
         valid_scale = valid_scales_tensor[batch_idx.to(src_masks.device)][:, None, :]
 
+        # print("\n===== VALID SCALE DEBUG =====")
+        # print("src_masks:", src_masks.shape)
+
+        # for b, m in enumerate(masks):
+        #     print(
+        #         f"image {b}: "
+        #         f"GT mask = {tuple(m.shape)}, "
+        #         f"padded = {padded_size}, "
+        #         f"valid_scale = {valid_scales_tensor[b].tolist()}"
+        #     )
+
+        # print(
+        #     "matched valid_scale:",
+        #     valid_scale[:10, 0].detach().cpu().tolist()
+        # )
+        # print("============================\n")
+        # assert 1 == 0
+
         # No need to upsample predictions as we are using normalized coordinates
         # N x 1 x H x W
         src_masks = src_masks[:, None]

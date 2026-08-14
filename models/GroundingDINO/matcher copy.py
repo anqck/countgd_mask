@@ -211,42 +211,11 @@ class HungarianMatcher(nn.Module):
                 out_mask = outputs["pred_masks"][b]
                 tgt_mask = targets[b]["masks"].to(out_mask)
 
-                padded_h = out_mask.shape[-2] * 4
-                padded_w = out_mask.shape[-1] * 4
-
-                orig_h = tgt_mask.shape[-2]
-                orig_w = tgt_mask.shape[-1]
-
-                # Pad GT to the same canvas
-                pad_h = max(0, padded_h - orig_h)
-                pad_w = max(0, padded_w - orig_w)
-
-                if pad_h > 0 or pad_w > 0:
-                    tgt_mask = F.pad(tgt_mask, (0, pad_w, 0, pad_h))
-
-                # Important: normalized valid region
-                sx = min(orig_w, padded_w) / padded_w
-                sy = min(orig_h, padded_h) / padded_h
-
-                valid_scale = torch.tensor(
-                    [sx, sy],
-                    device=out_mask.device,
-                    dtype=out_mask.dtype,
-                )
-
-                point_coords = torch.rand(
-                    1,
-                    self.num_points,
-                    2,
-                    device=out_mask.device,
-                )
-
-                point_coords = point_coords * valid_scale
-
                 out_mask = out_mask[:, None]
                 tgt_mask = tgt_mask[:, None]
-
-                # point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
+                
+                
+                point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
                 tgt_mask = point_sample(
                     tgt_mask,
                     point_coords.repeat(tgt_mask.shape[0], 1, 1),
@@ -265,8 +234,6 @@ class HungarianMatcher(nn.Module):
                 with torch.autocast(enabled=False, device_type=out_mask.device.type):
                     out_mask = out_mask.float()
                     tgt_mask = tgt_mask.float()
-
-                   
                     if out_mask.shape[0] == 0:
                         mask_l = batch_sigmoid_ce_loss(out_mask, tgt_mask)
                         dice_l = batch_dice_loss(out_mask, tgt_mask)

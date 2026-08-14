@@ -336,7 +336,7 @@ def train_one_epoch(
             "class_error", utils.SmoothedValue(window_size=1, fmt="{value:.2f}")
         )
     header = f"Epoch: [{epoch}]"
-    print_freq = 1
+    print_freq = 10
     print(len(data_loader))
 
     _cnt = 0
