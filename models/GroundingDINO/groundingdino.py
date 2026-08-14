@@ -1325,8 +1325,8 @@ def build_groundingdino(
         "loss_ce": args.cls_loss_coef,  # 5.0
         "loss_bbox": args.bbox_loss_coef,  # 1.0
         "loss_giou": args.giou_loss_coef,  # 0.0
-        "loss_mask": args.mask_loss_coef,
-        "loss_dice": args.dice_loss_coef
+        "loss_mask": 0,
+        "loss_dice": 0
     }
     # if generate_mask:
 
