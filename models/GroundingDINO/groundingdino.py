@@ -566,6 +566,8 @@ class GroundingDINO(nn.Module):
             "pred_logits": outputs_class[-1],
             "pred_boxes": outputs_coord_list[-1],
         }
+
+        
         if pred_masks_per_dec_layer:
             out["pred_masks"] = pred_masks_per_dec_layer[-1]
 
@@ -630,6 +632,7 @@ class GroundingDINO(nn.Module):
         # outputs['one_hot'].shape
         # torch.Size([4, 900, 256])
 
+        # print(out.keys())
         return out
 
     @torch.jit.unused
@@ -1064,6 +1067,7 @@ class SetCriterion(nn.Module):
         )  # torch.Size([bs, 900, 256])
         token = outputs["token"]
 
+        # print(outputs.keys(),outputs["pred_masks"].shape)
         label_map_list = []
         indices = []
         for j in range(len(cat_list)):  # bs
@@ -1084,6 +1088,7 @@ class SetCriterion(nn.Module):
             }
             if "pred_masks" in outputs:
                 for_match["pred_masks"] = outputs["pred_masks"][j].unsqueeze(0)
+
 
             inds = self.matcher(for_match, [targets[j]], label_map_list[j])
             indices.extend(inds)
@@ -1124,6 +1129,8 @@ class SetCriterion(nn.Module):
                         "pred_logits": aux_outputs["pred_logits"][j].unsqueeze(0),
                         "pred_boxes": aux_outputs["pred_boxes"][j].unsqueeze(0),
                     }
+                    if "pred_masks" in outputs:
+                        aux_output_single["pred_masks"] = aux_outputs["pred_masks"][j].unsqueeze(0)
                     inds = self.matcher(
                         aux_output_single, [targets[j]], label_map_list[j]
                     )
@@ -1158,6 +1165,8 @@ class SetCriterion(nn.Module):
                     "pred_logits": interm_outputs["pred_logits"][j].unsqueeze(0),
                     "pred_boxes": interm_outputs["pred_boxes"][j].unsqueeze(0),
                 }
+                if "pred_masks" in outputs:
+                    interm_output_single["pred_masks"] = interm_outputs["pred_masks"][j].unsqueeze(0)
                 inds = self.matcher(
                     interm_output_single, [targets[j]], label_map_list[j]
                 )

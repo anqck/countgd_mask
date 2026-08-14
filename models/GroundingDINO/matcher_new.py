@@ -237,7 +237,7 @@ class HungarianMatcher(nn.Module):
             # ---------------------------------------------------------------
             # print(self.generate_mask , num_tgt)
             if self.generate_mask and num_tgt > 0:
-                # Input: outputs["pred_masks"][b] -> [nq, H, W]
+                # Input: outputs["pred_masks"][b] -> [nq, H/4, W/4]
                 out_mask = outputs["pred_masks"][b]
 
                 # Input: targets[b]["masks"].to(out_mask) -> [T, H, W]
