@@ -553,7 +553,7 @@ def get_count_errs(
                 count_output_state_dict["pred_cnt"] = []
             if "gt_cnt" not in count_output_state_dict:
                 count_output_state_dict["gt_cnt"] = []
-            if "pred_masks" not in count_output_state_dict and save_masks:
+            if "pred_masks" not in count_output_state_dict:
                 count_output_state_dict["pred_masks"] = []
 
             count_output_state_dict["count_info"].append(count_info.cpu())
@@ -562,13 +562,12 @@ def get_count_errs(
             )
             count_output_state_dict["pred_cnt"].append(pred_cnt)
             count_output_state_dict["gt_cnt"].append(gt_count)
-            if save_masks:
-                if sample_masks is not None:
-                    count_output_state_dict["pred_masks"].append(sample_masks.cpu())
-                else:
-                    count_output_state_dict["pred_masks"].append(
-                        torch.zeros((gt_count, 300, 300))
-                    )
+            if sample_masks is not None and save_masks:
+                count_output_state_dict["pred_masks"].append(sample_masks.cpu())
+            else:
+                count_output_state_dict["pred_masks"].append(
+                    torch.zeros((gt_count, 1, 1))
+                )
 
         # print("Pred Count: " + str(pred_cnt) + ", GT Count: " + str(gt_count))
         abs_errs.append(np.abs(gt_count - pred_cnt))
