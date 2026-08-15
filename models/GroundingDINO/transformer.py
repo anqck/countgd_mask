@@ -83,6 +83,7 @@ class MaskHead(nn.Module):
             output_dim=mask_dim,
             num_layers=3,
         )
+        
 
         # Explicit bbox geometry -> mask embedding
         self.mask_box_embed = MLP(
@@ -90,6 +91,13 @@ class MaskHead(nn.Module):
             hidden_dim=d_model,
             output_dim=mask_dim,
             num_layers=3,
+        )
+
+        self.mask_fuse = MLP(
+            input_dim=2 * mask_dim,
+            hidden_dim=d_model,
+            output_dim=mask_dim,
+            num_layers=2,
         )
 
         self.decoder_norm = nn.LayerNorm(d_model)
@@ -120,7 +128,8 @@ class MaskHead(nn.Module):
         memory,        
         spatial_shapes,
         backbone_layer_0,
-        tgt_undetach
+        tgt_undetach,
+        outputs_coord,
         
     ):  
         # predict_mask: bool = (backbone_layer_0 is not None) and self.generate_mask
@@ -160,12 +169,70 @@ class MaskHead(nn.Module):
 
        
         predicted_masks = []
-
-        for dec_output in hs:
+        
+        for layer_id, dec_output in enumerate(hs):
             dec_output_norm = self.decoder_norm(dec_output)
+
             mask_embed = self.mask_embed(dec_output_norm)
+
+            # Explicit spatial / instance information
+            layer_box = outputs_coord[layer_id].detach()
+            box_embed = self.mask_box_embed(layer_box)
+            # mask_embed = mask_embed + box_embed
+
+            mask_embed = self.mask_fuse(
+                torch.cat([mask_embed, box_embed], dim=-1)
+            )
+
             output_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
             predicted_masks.append(output_mask)
+
+            # with torch.no_grad():
+            #     box = outputs_coord[layer_id]
+
+            #     print(
+            #         f"layer {layer_id}: "
+            #         f"box mean={box.mean().item():.4f}, "
+            #         f"std={box.std().item():.4f}"
+            #     )
+
+            #     q_norm = mask_embed.norm(dim=-1).mean()
+            #     b_norm = box_embed.norm(dim=-1).mean()
+
+            #     print(
+            #         f"layer={layer_id} "
+            #         f"query_norm={q_norm.item():.4f} "
+            #         f"box_norm={b_norm.item():.4f}"
+            #     )
+            # with torch.no_grad():
+            #     query_embed = self.mask_embed(dec_output_norm)
+            #     box_embed = self.mask_box_embed(layer_box)
+
+            #     q = F.normalize(query_embed[0], dim=-1)
+            #     b = F.normalize(box_embed[0], dim=-1)
+
+            #     q_sim = q @ q.T
+            #     b_sim = b @ b.T
+
+            #     eye = torch.eye(q.shape[0], dtype=torch.bool, device=q.device)
+
+            #     print(
+            #         f"Layer {layer_id+1}: "
+            #         f"query cosine={q_sim[~eye].mean().item():.4f}, "
+            #         f"box cosine={b_sim[~eye].mean().item():.4f}"
+            #     )
+
+            #     final_embed = F.normalize(
+            #         query_embed[0] + box_embed[0],
+            #         dim=-1
+            #     )
+
+            #     final_sim = final_embed @ final_embed.T
+
+            #     print(
+            #         f"             final cosine="
+            #         f"{final_sim[~eye].mean().item():.4f}"
+            #     )
 
         
         interm_dec_output_norm = self.interm_decoder_norm(tgt_undetach)
