@@ -101,8 +101,7 @@ class MaskHead(nn.Module):
         for m in self.modules():
             if isinstance(m, MSDeformAttn):
                 m._reset_parameters()
-        if self.num_feature_levels > 1 and self.level_embed is not None:
-            nn.init.normal_(self.level_embed)
+
         
         nn.init.kaiming_normal_(self.mask_features.weight, a=1)
         if self.mask_features.bias is not None:
