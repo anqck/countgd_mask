@@ -342,48 +342,7 @@ class Transformer(nn.Module):
         self.enc_out_class_embed = None
         self.enc_out_bbox_embed = None
 
-        # Mask branch
-        self.generate_mask = generate_mask
-        if self.generate_mask:
-            assert mask_dim is not None
-            assert conv_dim is not None
-            assert backbone_layer0_channels is not None
-            # Post-Encoder
-            self.mask_features = Conv2d(
-                conv_dim, mask_dim, kernel_size=1, stride=1, padding=0
-            )
-            # 32 is magic number
-            self.feature_lateral_norm = nn.GroupNorm(32, conv_dim)
-            self.feature_output_norm = nn.GroupNorm(32, conv_dim)
-            self.feature_lateral_conv = nn.Conv2d(
-                in_channels=backbone_layer0_channels,
-                out_channels=conv_dim,
-                kernel_size=1,
-                bias=False,
-            )
-            self.feature_output_conv = nn.Conv2d(
-                in_channels=conv_dim,
-                out_channels=conv_dim,
-                kernel_size=3,
-                stride=1,
-                padding=1,
-                bias=False,
-            )
-            # Post-Decoder
-            self.mask_embed = MLP(
-                input_dim=d_model,
-                hidden_dim=d_model,
-                output_dim=mask_dim,
-                num_layers=3,
-            )
-
-            # Explicit bbox geometry -> mask embedding
-            self.mask_box_embed = MLP(
-                input_dim=4,
-                hidden_dim=d_model,
-                output_dim=mask_dim,
-                num_layers=3,
-            )
+    
 
         self._reset_parameters()
 
@@ -396,14 +355,7 @@ class Transformer(nn.Module):
                 m._reset_parameters()
         if self.num_feature_levels > 1 and self.level_embed is not None:
             nn.init.normal_(self.level_embed)
-        if self.generate_mask:
-            nn.init.kaiming_normal_(self.mask_features.weight, a=1)
-            if self.mask_features.bias is not None:
-                nn.init.constant_(self.mask_features.bias, 0)
-            # We don't init bias for feature convs because they're
-            # set to False in init
-            nn.init.kaiming_normal_(self.feature_lateral_conv.weight, a=1)
-            nn.init.kaiming_normal_(self.feature_output_conv.weight, a=1)
+        
 
     def get_valid_ratio(self, mask):
         _, H, W = mask.shape

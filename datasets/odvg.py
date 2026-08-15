@@ -15,6 +15,110 @@ sys.path.append(os.path.dirname(sys.path[0]))
 
 import datasets.transforms as T
 
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
+
+# def visualize_box_mask_pairs(
+#     image,
+#     boxes,
+#     masks,
+#     save_path=None,
+# ):
+#     if isinstance(image, Image.Image):
+#         image = np.asarray(image)
+
+#     if hasattr(boxes, "detach"):
+#         boxes = boxes.detach().cpu().numpy()
+
+#     if hasattr(masks, "detach"):
+#         masks = masks.detach().cpu().numpy()
+
+#     n = min(len(boxes), len(masks))
+
+#     cols = 4
+#     rows = (n + cols - 1) // cols
+
+#     fig, axes = plt.subplots(
+#         rows,
+#         cols,
+#         figsize=(16, 4 * rows),
+#     )
+
+#     axes = np.asarray(axes).reshape(-1)
+
+#     for i in range(n):
+#         ax = axes[i]
+
+#         ax.imshow(image)
+
+#         mask = masks[i].astype(bool)
+
+#         # mask overlay
+#         overlay = np.zeros(
+#             (*mask.shape, 4),
+#             dtype=np.float32,
+#         )
+
+#         overlay[..., 0] = 1.0
+#         overlay[..., 3] = mask * 0.4
+
+#         ax.imshow(overlay)
+
+#         # bbox
+#         x1, y1, x2, y2 = boxes[i]
+
+#         rect = plt.Rectangle(
+#             (x1, y1),
+#             x2 - x1,
+#             y2 - y1,
+#             fill=False,
+#             edgecolor="yellow",
+#             linewidth=2,
+#         )
+
+#         ax.add_patch(rect)
+
+#         # center of bbox
+#         cx = (x1 + x2) / 2
+#         cy = (y1 + y2) / 2
+
+#         ax.scatter(
+#             cx,
+#             cy,
+#             s=80,
+#             c="cyan",
+#             edgecolors="black",
+#             linewidths=1.5,
+#         )
+
+#         ax.set_title(
+#             f"Instance {i}\n"
+#             f"box=({x1:.0f},{y1:.0f},{x2:.0f},{y2:.0f})"
+#         )
+
+#         ax.axis("off")
+
+#     for i in range(n, len(axes)):
+#         axes[i].axis("off")
+
+#     plt.tight_layout()
+
+#     if save_path is not None:
+#         os.makedirs(
+#             os.path.dirname(save_path) or ".",
+#             exist_ok=True,
+#         )
+
+#         plt.savefig(
+#             save_path,
+#             dpi=150,
+#             bbox_inches="tight",
+#         )
+#         plt.close(fig)
+#     else:
+#         plt.show()
 
 class ODVGDataset(VisionDataset):
     """
@@ -76,6 +180,9 @@ class ODVGDataset(VisionDataset):
             raise FileNotFoundError(f"{abs_path} not found.")
         image = Image.open(abs_path).convert("RGB")
         exemplars = torch.tensor(meta["exemplars"], dtype=torch.int64)
+
+        # print(self.dataset_mode )
+        # assert 1 == 0
 
         w, h = image.size
         if self.dataset_mode == "OD":
@@ -162,7 +269,21 @@ class ODVGDataset(VisionDataset):
             assert target["labels"][0] == target["labels_uncropped"][0]
             # print("asserted")
         # size, cap_list, caption, bboxes, labels
-
+        
+        # print("filename:", rel_path)
+        # print("exemplars.shape:", exemplars.shape)
+        # print("exemplars.dtype:", exemplars.dtype)
+        # print("exemplars[0]:", exemplars[0])
+        # print("boxes.shape:", boxes.shape)
+        # print("masks.shape:", masks.shape)
+        
+        # visualize_box_mask_pairs(
+        #     image=image,
+        #     boxes=boxes,
+        #     masks=masks,
+        #     save_path=f"./tmp/debug_mask_{index}.png",
+        # )
+        # assert 1 == 0
         if self.transforms is not None:
             image, target = self.transforms(image, target)
 
