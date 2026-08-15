@@ -173,19 +173,40 @@ class MaskHead(nn.Module):
         for layer_id, dec_output in enumerate(hs):
             dec_output_norm = self.decoder_norm(dec_output)
 
-            mask_embed = self.mask_embed(dec_output_norm)
+            query_embed = self.mask_embed(dec_output_norm)
 
             # Explicit spatial / instance information
             layer_box = outputs_coord[layer_id].detach()
             box_embed = self.mask_box_embed(layer_box)
             # mask_embed = mask_embed + box_embed
 
-            mask_embed = self.mask_fuse(
-                torch.cat([mask_embed, box_embed], dim=-1)
+            spatial_query = self.mask_fuse(
+                torch.cat([query_embed, box_embed], dim=-1)
             )
 
-            output_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
-            predicted_masks.append(output_mask)
+            
+
+            # Query-specific spatial affinity
+            # spatial_attn = torch.einsum(
+            #     "bqc,bchw->bqhw",
+            #     spatial_query,
+            #     spatial_features,
+            # )
+
+            # spatial_attn = spatial_attn / (
+            #     spatial_query.shape[-1] ** 0.5
+            # )           
+
+
+            base_mask = torch.einsum(
+                "bqc,bchw->bqhw",
+                spatial_query,
+                mask_features,
+            )
+
+            # output_mask = base_mask + 0.5 * spatial_attn
+            # output_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
+            predicted_masks.append(base_mask)
 
             # with torch.no_grad():
             #     box = outputs_coord[layer_id]
