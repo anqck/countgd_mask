@@ -568,7 +568,7 @@ class GroundingDINO(nn.Module):
             ]
         )
 
-        (_mask_features, pred_masks_per_dec_layer, interm_masks) = self.MaskHead(hs, memory, spatial_shapes, backbone_layer_0=layer0,tgt_undetach= tgt_undetach )
+        (_mask_features, pred_masks_per_dec_layer, interm_masks) = self.mask_head(hs, memory, spatial_shapes, backbone_layer_0=layer0,tgt_undetach= tgt_undetach )
 
         out = {
             "pred_logits": outputs_class[-1],
