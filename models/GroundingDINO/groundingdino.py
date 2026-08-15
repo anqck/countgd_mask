@@ -41,7 +41,7 @@ from .bertwarper import (
 )
 from .matcher import build_matcher
 from .positional_encoding_loca import PositionalEncodingsFixed
-from .transformer import Transformer, build_transformer
+from .transformer import Transformer, build_transformer, MaskHead, build_maskhead
 from .transformer_loca import TransformerEncoder
 from .utils import MLP, ContrastiveEmbed
 
@@ -53,7 +53,8 @@ class GroundingDINO(nn.Module):
         self,
         backbone: Joiner,
         transformer: Transformer,
-        num_queries: int,
+        mask_head: MaskHead,
+        num_queries: int,        
         aux_loss=False,
         iter_update=False,
         query_dim=2,
@@ -72,6 +73,7 @@ class GroundingDINO(nn.Module):
         text_encoder_type="bert-base-uncased",
         sub_sentence_present=True,
         max_text_len=256,
+        
     ):
         """Initializes the model.
         Parameters:
@@ -217,7 +219,9 @@ class GroundingDINO(nn.Module):
 
             self.refpoint_embed = None
 
+        self.mask_head = mask_head
         self._reset_parameters()
+
 
     def _reset_parameters(self):
         # init input_proj
@@ -530,9 +534,9 @@ class GroundingDINO(nn.Module):
             hs_enc,
             ref_enc,
             init_box_proposal,
-            _mask_features,
-            pred_masks_per_dec_layer,
-            interm_masks,
+            memory,
+            spatial_shapes,
+            tgt_undetach,
         ) = self.transformer(
             srcs,
             masks,
@@ -541,8 +545,10 @@ class GroundingDINO(nn.Module):
             input_query_label,
             attn_mask,
             text_dict,
-            backbone_layer_0=layer0,
+            
         )
+
+        
 
         # deformable-detr-like anchor update
         outputs_coord_list = []
@@ -561,6 +567,8 @@ class GroundingDINO(nn.Module):
                 for layer_cls_embed, layer_hs in zip(self.class_embed, hs)
             ]
         )
+
+        (_mask_features, pred_masks_per_dec_layer, interm_masks) = self.MaskHead(hs, memory, spatial_shapes, backbone_layer_0=layer0,tgt_undetach= tgt_undetach )
 
         out = {
             "pred_logits": outputs_class[-1],
@@ -603,36 +611,7 @@ class GroundingDINO(nn.Module):
             #     "pred_boxes": init_box_proposal,
             # }
 
-        # outputs['pred_logits'].shape
-        # torch.Size([4, 900, 256])
-
-        # outputs['pred_boxes'].shape
-        # torch.Size([4, 900, 4])
-
-        # outputs['pred_masks'].shape
-        # torch.Size([4, 900, h, w])
-
-        # outputs['text_mask'].shape
-        # torch.Size([256])
-
-        # outputs['aux_outputs'][0].keys()
-        # dict_keys(['pred_logits', 'pred_boxes', 'one_hot', 'text_mask', 'pred_masks'])
-
-        # outputs['aux_outputs'][img_idx]
-
-        # outputs['token']
-        # <class 'transformers.tokenization_utils_base.BatchEncoding'>
-
-        # outputs['interm_outputs'].keys()
-        # dict_keys(['pred_logits', 'pred_boxes', 'pred_masks', 'one_hot', 'text_mask'])
-
-        # outputs['interm_outputs_for_matching_pre'].keys()
-        # dict_keys(['pred_logits', 'pred_boxes'])
-
-        # outputs['one_hot'].shape
-        # torch.Size([4, 900, 256])
-
-        # print(out.keys())
+        
         return out
 
     @torch.jit.unused
@@ -1355,8 +1334,8 @@ def build_groundingdino(
             if getattr(args, "no_interm_box_loss", False)
             else args.giou_loss_coef,
         }
-        _coeff_weight_dict["loss_mask"] = args.mask_loss_coef
-        _coeff_weight_dict["loss_dice"] = args.dice_loss_coef
+        _coeff_weight_dict["loss_mask"] = 0
+        _coeff_weight_dict["loss_dice"] = 0
         interm_weight_dict = {
             k + "_interm": v * getattr(args, "interm_loss_coef", 1.0)
             for k, v in _coeff_weight_dict.items()
@@ -1425,6 +1404,7 @@ def build_groundingdino(
         GroundingDINO(
             backbone,
             build_transformer(args),
+            build_maskhead(args),
             num_queries=args.num_queries,  # 900
             aux_loss=args.aux_loss,  # True
             iter_update=True,  # True

@@ -38,6 +38,147 @@ from .utils import (
     get_sine_pos_embed,
 )
 
+class MaskHead(nn.Module):
+    def __init__(
+        self,
+        d_model=256,
+        # for mask
+
+        mask_dim: int | None = None,
+        conv_dim: int | None = None,
+        backbone_layer0_channels: int | None = None,
+    ):
+        super().__init__()
+       
+
+
+        assert mask_dim is not None
+        assert conv_dim is not None
+        assert backbone_layer0_channels is not None
+        # Post-Encoder
+        self.mask_features = Conv2d(
+            conv_dim, mask_dim, kernel_size=1, stride=1, padding=0
+        )
+        # 32 is magic number
+        self.feature_lateral_norm = nn.GroupNorm(32, conv_dim)
+        self.feature_output_norm = nn.GroupNorm(32, conv_dim)
+        self.feature_lateral_conv = nn.Conv2d(
+            in_channels=backbone_layer0_channels,
+            out_channels=conv_dim,
+            kernel_size=1,
+            bias=False,
+        )
+        self.feature_output_conv = nn.Conv2d(
+            in_channels=conv_dim,
+            out_channels=conv_dim,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+        )
+        # Post-Decoder
+        self.mask_embed = MLP(
+            input_dim=d_model,
+            hidden_dim=d_model,
+            output_dim=mask_dim,
+            num_layers=3,
+        )
+
+        # Explicit bbox geometry -> mask embedding
+        self.mask_box_embed = MLP(
+            input_dim=4,
+            hidden_dim=d_model,
+            output_dim=mask_dim,
+            num_layers=3,
+        )
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        for m in self.modules():
+            if isinstance(m, MSDeformAttn):
+                m._reset_parameters()
+        if self.num_feature_levels > 1 and self.level_embed is not None:
+            nn.init.normal_(self.level_embed)
+        
+        nn.init.kaiming_normal_(self.mask_features.weight, a=1)
+        if self.mask_features.bias is not None:
+            nn.init.constant_(self.mask_features.bias, 0)
+
+        nn.init.kaiming_normal_(self.feature_lateral_conv.weight, a=1)
+        nn.init.kaiming_normal_(self.feature_output_conv.weight, a=1)
+
+
+    def forward(
+        self,
+        hs,
+        memory,        
+        spatial_shapes,
+        backbone_layer_0,
+        tgt_undetach
+        
+    ):  
+        # predict_mask: bool = (backbone_layer_0 is not None) and self.generate_mask
+
+
+        mask_features: torch.Tensor | None = None
+
+        # According to backbone and encoder memory layout, layer0 is the most
+        # coarse feature map (1/8) from encoder memory
+        # -> bs, c, \sum{wh}
+        mem0 = memory.transpose(1, 2)
+        split_regions: list[int] = [int(h) * int(w) for h, w in spatial_shapes]
+        # We're using `torch.*` functions because they have better typing annotation,
+        # which would be useful to LSPs
+        # -> ([bs, c, wh] * 4)[0]
+        mem0 = torch.split(mem0, split_regions, 2)[0]
+        # -> (bs, c, h, w) because spatial_shapes in in (h, w)
+        mem0 = torch.unflatten(
+            mem0, 2, (int(spatial_shapes[0][0]), int(spatial_shapes[0][1]))
+        )
+
+        cur_fpn = self.feature_lateral_conv(backbone_layer_0)
+        # We interpolates mem0 (1/8) into cur_fpn (1/4) size before adding
+        cur_fpn = self.feature_lateral_norm(cur_fpn)
+        y = cur_fpn + F.interpolate(
+            mem0,
+            size=cur_fpn.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+        )
+        y = self.feature_output_conv(y)
+        y = self.feature_output_norm(y)
+        y = F.relu(y)
+        # bs, c, h, w
+        mask_features: torch.Tensor = self.mask_features(y)
+        
+
+       
+        predicted_masks = []
+
+        for dec_output in hs:
+            dec_output_norm = self.decoder_norm(dec_output)
+            mask_embed = self.mask_embed(dec_output_norm)
+            output_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
+            predicted_masks.append(output_mask)
+
+        
+        interm_dec_output_norm = self.decoder_norm(tgt_undetach)
+        interm_mask_embed = self.mask_embed(interm_dec_output_norm)
+        interm_masks = torch.einsum(
+            "bqc,bchw->bqhw", interm_mask_embed, mask_features
+        )
+
+
+        return (
+            mask_features,
+            predicted_masks,
+            interm_masks,
+        )
+
 
 class Transformer(nn.Module):
     def __init__(
@@ -234,6 +375,14 @@ class Transformer(nn.Module):
                 num_layers=3,
             )
 
+            # Explicit bbox geometry -> mask embedding
+            self.mask_box_embed = MLP(
+                input_dim=4,
+                hidden_dim=d_model,
+                output_dim=mask_dim,
+                num_layers=3,
+            )
+
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -275,8 +424,6 @@ class Transformer(nn.Module):
         tgt,
         attn_mask: torch.Tensor | None = None,
         text_dict: dict | None = None,
-        *,
-        backbone_layer_0: torch.Tensor | None = None,
     ):
         """
         Input:
@@ -287,7 +434,7 @@ class Transformer(nn.Module):
             - tgt: [bs, num_dn, d_model]. None in infer
 
         """
-        predict_mask: bool = (backbone_layer_0 is not None) and self.generate_mask
+
         # prepare input for encoder
         src_flatten = []
         mask_flatten = []
@@ -339,35 +486,7 @@ class Transformer(nn.Module):
         memory: torch.Tensor = encoder_results[0]
         memory_text: torch.Tensor = encoder_results[1]
         mask_features: torch.Tensor | None = None
-        if predict_mask:
-            # According to backbone and encoder memory layout, layer0 is the most
-            # coarse feature map (1/8) from encoder memory
-            # -> bs, c, \sum{wh}
-            mem0 = memory.transpose(1, 2)
-            split_regions: list[int] = [int(h) * int(w) for h, w in spatial_shapes]
-            # We're using `torch.*` functions because they have better typing annotation,
-            # which would be useful to LSPs
-            # -> ([bs, c, wh] * 4)[0]
-            mem0 = torch.split(mem0, split_regions, 2)[0]
-            # -> (bs, c, h, w) because spatial_shapes in in (h, w)
-            mem0 = torch.unflatten(
-                mem0, 2, (int(spatial_shapes[0][0]), int(spatial_shapes[0][1]))
-            )
-
-            cur_fpn = self.feature_lateral_conv(backbone_layer_0)
-            # We interpolates mem0 (1/8) into cur_fpn (1/4) size before adding
-            cur_fpn = self.feature_lateral_norm(cur_fpn)
-            y = cur_fpn + F.interpolate(
-                mem0,
-                size=cur_fpn.shape[-2:],
-                mode="bilinear",
-                align_corners=False,
-            )
-            y = self.feature_output_conv(y)
-            y = self.feature_output_norm(y)
-            y = F.relu(y)
-            # bs, c, h, w
-            mask_features: torch.Tensor = self.mask_features(y)
+        
 
         #########################################################
         # End Encoder
@@ -489,14 +608,7 @@ class Transformer(nn.Module):
         # references: n_dec+1, bs, nq, query_dim
         # predicted_masks: n_dec, bs, nq, h, w
         #########################################################
-        predicted_masks = []
-        if predict_mask:
-            for dec_output in hs:
-                dec_output_norm = self.decoder_norm(dec_output)
-                mask_embed = self.mask_embed(dec_output_norm)
-                output_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
-                predicted_masks.append(output_mask)
-
+       
         #########################################################
         # Begin postprocess
         #########################################################
@@ -504,12 +616,7 @@ class Transformer(nn.Module):
         if self.two_stage_type == "standard":
             hs_enc = tgt_undetach.unsqueeze(0)
             ref_enc = refpoint_embed_undetach.sigmoid().unsqueeze(0)
-            if predict_mask:
-                interm_dec_output_norm = self.decoder_norm(tgt_undetach)
-                interm_mask_embed = self.mask_embed(interm_dec_output_norm)
-                interm_masks = torch.einsum(
-                    "bqc,bchw->bqhw", interm_mask_embed, mask_features
-                )
+            
         else:
             hs_enc = ref_enc = None
         #########################################################
@@ -524,9 +631,9 @@ class Transformer(nn.Module):
             hs_enc,
             ref_enc,
             init_box_proposal,
-            mask_features,
-            predicted_masks,
-            interm_masks,
+            memory,
+            spatial_shapes,
+            tgt_undetach
         )
         # hs: (n_dec, bs, nq, d_model)
         # references: sigmoid coordinates. (n_dec+1, bs, bq, 4)
@@ -1090,6 +1197,14 @@ def build_transformer(args) -> Transformer:
         fusion_dropout=args.fusion_dropout,  # 0
         fusion_droppath=args.fusion_droppath,  # 0.1
         generate_mask=args.generate_mask,
+        mask_dim=args.mask_dim,
+        conv_dim=args.conv_dim,
+        backbone_layer0_channels=args.backbone_layer0_channels,
+    )
+
+def build_maskhead(args) -> MaskHead:
+    return MaskHead(
+        d_model=args.hidden_dim,  # 256      
         mask_dim=args.mask_dim,
         conv_dim=args.conv_dim,
         backbone_layer0_channels=args.backbone_layer0_channels,
