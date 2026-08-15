@@ -1078,6 +1078,8 @@ class SetCriterion(nn.Module):
             label_map = torch.stack(label_map, dim=0).squeeze(1)
 
             label_map_list.append(label_map)
+
+
         for j in range(len(cat_list)):  # bs
             for_match = {
                 "pred_logits": outputs["pred_logits"][j].unsqueeze(0),
@@ -1092,6 +1094,8 @@ class SetCriterion(nn.Module):
         # indices : A list of size batch_size, containing tuples of (index_i, index_j) where:
         # - index_i is the indices of the selected predictions (in order)
         # - index_j is the indices of the corresponding selected targets (in order)
+
+
 
         # import pdb; pdb.set_trace()
         tgt_ids = [v["labels"].cpu() for v in targets]
@@ -1120,28 +1124,28 @@ class SetCriterion(nn.Module):
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:
             for idx, aux_outputs in enumerate(outputs["aux_outputs"]):
-                indices = []
-                for j in range(len(cat_list)):  # bs
-                    aux_output_single = {
-                        "pred_logits": aux_outputs["pred_logits"][j].unsqueeze(0),
-                        "pred_boxes": aux_outputs["pred_boxes"][j].unsqueeze(0),
-                    }
-                    # if "pred_masks" in outputs:
-                    #     aux_output_single["pred_masks"] = aux_outputs["pred_masks"][j].unsqueeze(0)
-                    inds = self.matcher(
-                        aux_output_single, [targets[j]], label_map_list[j]
-                    )
-                    indices.extend(inds)
-                one_hot_aux = torch.zeros(
-                    outputs["pred_logits"].size(), dtype=torch.int64
-                )
-                tgt_ids = [v["labels"].cpu() for v in targets]
-                for i in range(len(indices)):
-                    tgt_ids[i] = tgt_ids[i][indices[i][1]]
-                    one_hot_aux[i, indices[i][0]] = label_map_list[i][tgt_ids[i]].to(
-                        torch.long
-                    )
-                aux_outputs["one_hot"] = one_hot_aux
+                # indices = []
+                # for j in range(len(cat_list)):  # bs
+                #     aux_output_single = {
+                #         "pred_logits": aux_outputs["pred_logits"][j].unsqueeze(0),
+                #         "pred_boxes": aux_outputs["pred_boxes"][j].unsqueeze(0),
+                #     }
+                #     # if "pred_masks" in outputs:
+                #     #     aux_output_single["pred_masks"] = aux_outputs["pred_masks"][j].unsqueeze(0)
+                #     inds = self.matcher(
+                #         aux_output_single, [targets[j]], label_map_list[j]
+                #     )
+                #     indices.extend(inds)
+                # one_hot_aux = torch.zeros(
+                #     outputs["pred_logits"].size(), dtype=torch.int64
+                # )
+                # tgt_ids = [v["labels"].cpu() for v in targets]
+                # for i in range(len(indices)):
+                #     tgt_ids[i] = tgt_ids[i][indices[i][1]]
+                #     one_hot_aux[i, indices[i][0]] = label_map_list[i][tgt_ids[i]].to(
+                #         torch.long
+                #     )
+                aux_outputs["one_hot"] = outputs["one_hot"]
                 aux_outputs["text_mask"] = outputs["text_mask"]
                 if return_indices:
                     indices_list.append(indices)
@@ -1156,26 +1160,26 @@ class SetCriterion(nn.Module):
         # interm_outputs loss
         if "interm_outputs" in outputs:
             interm_outputs = outputs["interm_outputs"]
-            indices = []
-            for j in range(len(cat_list)):  # bs
-                interm_output_single = {
-                    "pred_logits": interm_outputs["pred_logits"][j].unsqueeze(0),
-                    "pred_boxes": interm_outputs["pred_boxes"][j].unsqueeze(0),
-                }
-                # if "pred_masks" in outputs:
-                #     interm_output_single["pred_masks"] = interm_outputs["pred_masks"][j].unsqueeze(0)
-                inds = self.matcher(
-                    interm_output_single, [targets[j]], label_map_list[j]
-                )
-                indices.extend(inds)
-            one_hot_aux = torch.zeros(outputs["pred_logits"].size(), dtype=torch.int64)
-            tgt_ids = [v["labels"].cpu() for v in targets]
-            for i in range(len(indices)):
-                tgt_ids[i] = tgt_ids[i][indices[i][1]]
-                one_hot_aux[i, indices[i][0]] = label_map_list[i][tgt_ids[i]].to(
-                    torch.long
-                )
-            interm_outputs["one_hot"] = one_hot_aux
+            # indices = []
+            # for j in range(len(cat_list)):  # bs
+            #     interm_output_single = {
+            #         "pred_logits": interm_outputs["pred_logits"][j].unsqueeze(0),
+            #         "pred_boxes": interm_outputs["pred_boxes"][j].unsqueeze(0),
+            #     }
+            #     # if "pred_masks" in outputs:
+            #     #     interm_output_single["pred_masks"] = interm_outputs["pred_masks"][j].unsqueeze(0)
+            #     inds = self.matcher(
+            #         interm_output_single, [targets[j]], label_map_list[j]
+            #     )
+            #     indices.extend(inds)
+            # one_hot_aux = torch.zeros(outputs["pred_logits"].size(), dtype=torch.int64)
+            # tgt_ids = [v["labels"].cpu() for v in targets]
+            # for i in range(len(indices)):
+            #     tgt_ids[i] = tgt_ids[i][indices[i][1]]
+            #     one_hot_aux[i, indices[i][0]] = label_map_list[i][tgt_ids[i]].to(
+            #         torch.long
+            #     )
+            interm_outputs["one_hot"] = outputs["one_hot"]
             interm_outputs["text_mask"] = outputs["text_mask"]
             if return_indices:
                 indices_list.append(indices)
@@ -1307,6 +1311,8 @@ def build_groundingdino(
         "loss_mask": 0,
         "loss_dice": 0
     }
+    weight_dict["loss_mask"] = args.mask_loss_coef
+    weight_dict["loss_dice"] = args.dice_loss_coef
     # if generate_mask:
 
 
@@ -1334,16 +1340,15 @@ def build_groundingdino(
             if getattr(args, "no_interm_box_loss", False)
             else args.giou_loss_coef,
         }
-        _coeff_weight_dict["loss_mask"] = 0
-        _coeff_weight_dict["loss_dice"] = 0
+        _coeff_weight_dict["loss_mask"] = args.mask_loss_coef
+        _coeff_weight_dict["loss_dice"] = args.dice_loss_coef
         interm_weight_dict = {
             k + "_interm": v * getattr(args, "interm_loss_coef", 1.0)
             for k, v in _coeff_weight_dict.items()
         }
         weight_dict.update(interm_weight_dict)
 
-        weight_dict["loss_mask"] = args.mask_loss_coef
-        weight_dict["loss_dice"] = args.dice_loss_coef
+
         # print(weight_dict)
         # assert 1 == 0
     # Built Backbone according to config:
