@@ -92,6 +92,9 @@ class MaskHead(nn.Module):
             num_layers=3,
         )
 
+        self.decoder_norm = nn.LayerNorm(d_model)
+        self.interm_decoder_norm = nn.LayerNorm(d_model)
+
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -165,7 +168,7 @@ class MaskHead(nn.Module):
             predicted_masks.append(output_mask)
 
         
-        interm_dec_output_norm = self.decoder_norm(tgt_undetach)
+        interm_dec_output_norm = self.interm_decoder_norm(tgt_undetach)
         interm_mask_embed = self.mask_embed(interm_dec_output_norm)
         interm_masks = torch.einsum(
             "bqc,bchw->bqhw", interm_mask_embed, mask_features
@@ -285,7 +288,7 @@ class Transformer(nn.Module):
             use_text_cross_attention=use_text_cross_attention,
         )
 
-        self.decoder_norm = decoder_norm = nn.LayerNorm(d_model)
+        decoder_norm = nn.LayerNorm(d_model)
         self.decoder = TransformerDecoder(
             decoder_layer,
             num_decoder_layers,
