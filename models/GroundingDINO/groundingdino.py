@@ -947,6 +947,32 @@ class SetCriterion(nn.Module):
 
         assert "pred_masks" in outputs
 
+        filtered_indices = []
+        for i, t in enumerate(targets):
+            # Lấy số lượng instances của ảnh thứ i
+            n_instances = len(t["masks"]) if "masks" in t else len(t["labels"])
+            
+            if n_instances <= 10:
+                filtered_indices.append(indices[i])
+            else:
+                # Nếu số lượng instances > k: bỏ qua ảnh này (gán index rỗng)
+                device = indices[i][0].device
+                filtered_indices.append((
+                    torch.tensor([], dtype=torch.long, device=device),
+                    torch.tensor([], dtype=torch.long, device=device)
+                ))
+        
+        indices = filtered_indices
+
+        # Nếu tất cả các ảnh trong batch đều có > k instances, trả về loss mask = 0
+        total_matched = sum(len(src) for src, _ in indices)
+        if total_matched == 0:
+            zero_loss = outputs["pred_masks"].sum() * 0.0
+            return {
+                "loss_mask": zero_loss,
+                "loss_dice": zero_loss,
+            }
+
         src_idx = self._get_src_permutation_idx(indices)
         tgt_idx = self._get_tgt_permutation_idx(indices)
         src_masks = outputs["pred_masks"]
@@ -1040,9 +1066,14 @@ class SetCriterion(nn.Module):
             align_corners=False,
         ).squeeze(1)
 
+        num_masks_filtered = sum(
+            len(src_idx)
+            for src_idx, _ in indices
+        )
+
         losses = {
-            "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),
-            "loss_dice": dice_loss_jit(point_logits, point_labels, num_masks),
+            "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks_filtered),
+            "loss_dice": dice_loss_jit(point_logits, point_labels, num_masks_filtered),
         }
 
         del src_masks
