@@ -1124,28 +1124,28 @@ class SetCriterion(nn.Module):
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:
             for idx, aux_outputs in enumerate(outputs["aux_outputs"]):
-                # indices = []
-                # for j in range(len(cat_list)):  # bs
-                #     aux_output_single = {
-                #         "pred_logits": aux_outputs["pred_logits"][j].unsqueeze(0),
-                #         "pred_boxes": aux_outputs["pred_boxes"][j].unsqueeze(0),
-                #     }
-                #     # if "pred_masks" in outputs:
-                #     #     aux_output_single["pred_masks"] = aux_outputs["pred_masks"][j].unsqueeze(0)
-                #     inds = self.matcher(
-                #         aux_output_single, [targets[j]], label_map_list[j]
-                #     )
-                #     indices.extend(inds)
-                # one_hot_aux = torch.zeros(
-                #     outputs["pred_logits"].size(), dtype=torch.int64
-                # )
-                # tgt_ids = [v["labels"].cpu() for v in targets]
-                # for i in range(len(indices)):
-                #     tgt_ids[i] = tgt_ids[i][indices[i][1]]
-                #     one_hot_aux[i, indices[i][0]] = label_map_list[i][tgt_ids[i]].to(
-                #         torch.long
-                #     )
-                aux_outputs["one_hot"] = outputs["one_hot"]
+                indices = []
+                for j in range(len(cat_list)):  # bs
+                    aux_output_single = {
+                        "pred_logits": aux_outputs["pred_logits"][j].unsqueeze(0),
+                        "pred_boxes": aux_outputs["pred_boxes"][j].unsqueeze(0),
+                    }
+                    # if "pred_masks" in outputs:
+                    #     aux_output_single["pred_masks"] = aux_outputs["pred_masks"][j].unsqueeze(0)
+                    inds = self.matcher(
+                        aux_output_single, [targets[j]], label_map_list[j]
+                    )
+                    indices.extend(inds)
+                one_hot_aux = torch.zeros(
+                    outputs["pred_logits"].size(), dtype=torch.int64
+                )
+                tgt_ids = [v["labels"].cpu() for v in targets]
+                for i in range(len(indices)):
+                    tgt_ids[i] = tgt_ids[i][indices[i][1]]
+                    one_hot_aux[i, indices[i][0]] = label_map_list[i][tgt_ids[i]].to(
+                        torch.long
+                    )
+                aux_outputs["one_hot"] = one_hot_aux
                 aux_outputs["text_mask"] = outputs["text_mask"]
                 if return_indices:
                     indices_list.append(indices)
@@ -1160,26 +1160,26 @@ class SetCriterion(nn.Module):
         # interm_outputs loss
         if "interm_outputs" in outputs:
             interm_outputs = outputs["interm_outputs"]
-            # indices = []
-            # for j in range(len(cat_list)):  # bs
-            #     interm_output_single = {
-            #         "pred_logits": interm_outputs["pred_logits"][j].unsqueeze(0),
-            #         "pred_boxes": interm_outputs["pred_boxes"][j].unsqueeze(0),
-            #     }
-            #     # if "pred_masks" in outputs:
-            #     #     interm_output_single["pred_masks"] = interm_outputs["pred_masks"][j].unsqueeze(0)
-            #     inds = self.matcher(
-            #         interm_output_single, [targets[j]], label_map_list[j]
-            #     )
-            #     indices.extend(inds)
-            # one_hot_aux = torch.zeros(outputs["pred_logits"].size(), dtype=torch.int64)
-            # tgt_ids = [v["labels"].cpu() for v in targets]
-            # for i in range(len(indices)):
-            #     tgt_ids[i] = tgt_ids[i][indices[i][1]]
-            #     one_hot_aux[i, indices[i][0]] = label_map_list[i][tgt_ids[i]].to(
-            #         torch.long
-            #     )
-            interm_outputs["one_hot"] = outputs["one_hot"]
+            indices = []
+            for j in range(len(cat_list)):  # bs
+                interm_output_single = {
+                    "pred_logits": interm_outputs["pred_logits"][j].unsqueeze(0),
+                    "pred_boxes": interm_outputs["pred_boxes"][j].unsqueeze(0),
+                }
+                # if "pred_masks" in outputs:
+                #     interm_output_single["pred_masks"] = interm_outputs["pred_masks"][j].unsqueeze(0)
+                inds = self.matcher(
+                    interm_output_single, [targets[j]], label_map_list[j]
+                )
+                indices.extend(inds)
+            one_hot_aux = torch.zeros(outputs["pred_logits"].size(), dtype=torch.int64)
+            tgt_ids = [v["labels"].cpu() for v in targets]
+            for i in range(len(indices)):
+                tgt_ids[i] = tgt_ids[i][indices[i][1]]
+                one_hot_aux[i, indices[i][0]] = label_map_list[i][tgt_ids[i]].to(
+                    torch.long
+                )
+            interm_outputs["one_hot"] = one_hot_aux
             interm_outputs["text_mask"] = outputs["text_mask"]
             if return_indices:
                 indices_list.append(indices)

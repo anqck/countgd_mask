@@ -177,12 +177,12 @@ class MaskHead(nn.Module):
 
             # Explicit spatial / instance information
             layer_box = outputs_coord[layer_id].detach()
-            box_embed = self.mask_box_embed(layer_box)
-            # mask_embed = mask_embed + box_embed
+            # box_embed = self.mask_box_embed(layer_box)
+            # mask_embed = query_embed + box_embed
 
-            spatial_query = self.mask_fuse(
-                torch.cat([query_embed, box_embed], dim=-1)
-            )
+            # spatial_query = self.mask_fuse(
+            #     torch.cat([query_embed, box_embed], dim=-1)
+            # )
 
             
 
@@ -200,7 +200,7 @@ class MaskHead(nn.Module):
 
             base_mask = torch.einsum(
                 "bqc,bchw->bqhw",
-                spatial_query,
+                query_embed,
                 mask_features,
             )
 
