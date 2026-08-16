@@ -175,8 +175,11 @@ class MaskHead(nn.Module):
 
             query_embed = self.mask_embed(dec_output_norm)
 
+            # print(query_embed.shape, dec_output_norm.shape)
+            # assert 1 == 0
+
             # Explicit spatial / instance information
-            layer_box = outputs_coord[layer_id].detach()
+            # layer_box = outputs_coord[layer_id].detach()
             # box_embed = self.mask_box_embed(layer_box)
             # mask_embed = query_embed + box_embed
 
