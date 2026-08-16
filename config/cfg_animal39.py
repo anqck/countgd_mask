@@ -92,19 +92,7 @@ num_select = 900
 batch_norm_type = "FrozenBatchNorm2d"
 masks = False
 aux_loss = True
-set_cost_class = 5.0
-set_cost_bbox = 1.0
-set_cost_giou = 0.0
-cls_loss_coef = 5.0
-bbox_loss_coef = 1.0
-giou_loss_coef = 0.0
-enc_loss_coef = 1.0
-interm_loss_coef = 1.0
-no_interm_box_loss = False
-mask_loss_coef = 1.0
-dice_loss_coef = 1.0
-focal_alpha = 0.25
-focal_gamma = 2.0
+
 decoder_sa_type = "sa"
 matcher_type = "HungarianMatcher"
 decoder_module_seq = ["sa", "ca", "ffn"]
@@ -161,6 +149,26 @@ val_label_list = [
     "Wildebeest",
 ]
 
+
+set_cost_class = 5.0
+set_cost_bbox = 1.0
+set_cost_giou = 0.0
+set_cost_mask = 0.0
+set_cost_dice = 0.0
+
+cls_loss_coef = 1.0
+bbox_loss_coef = 1.0
+giou_loss_coef = 0.0
+mask_loss_coef = 2.0
+dice_loss_coef = 2.0
+focal_alpha = 0.25
+focal_gamma = 2.0
+
+enc_loss_coef = 1.0
+interm_loss_coef = 1.0
+no_interm_box_loss = False
+
+
 generate_mask = True
 mask_dim = 256
 conv_dim = 256
@@ -168,10 +176,7 @@ conv_dim = 256
 # sets args.backbone_layer0_channels = backbone.embed_dim
 # backbone.embed_dim determined by backbone builder functions
 backbone_layer0_channels = 128
-mask_loss_coef = 0.5
-dice_loss_coef = 0.5
-set_cost_mask = 0.0
-set_cost_dice = 0.0
+
 # Point-sampled mask loss (MaskDINO defaults)
 mask_num_points = 12544
 mask_oversample_ratio = 3.0
