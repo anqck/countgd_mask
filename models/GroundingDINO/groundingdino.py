@@ -45,6 +45,254 @@ from .transformer import Transformer, build_transformer, MaskHead, build_maskhea
 from .transformer_loca import TransformerEncoder
 from .utils import MLP, ContrastiveEmbed
 
+import os
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+def visualize_target_points(
+    image,
+    target,
+    save_path=None,
+    show=True,
+    point_size=40,
+    box_alpha=0.7,
+    title=None,
+):
+    """
+    Visualize target boxes/points on the original image.
+
+    Args:
+        image:
+            - PIL.Image
+            - numpy array [H, W, 3]
+            - numpy array [H, W]
+            - image path (str)
+
+        target:
+            target dict containing:
+                target["boxes"] : [N, 4]
+                    format [cx, cy, w, h]
+                    normalized to [0, 1]
+
+            Here cx, cy are treated as point annotations.
+
+        save_path:
+            Where to save visualization.
+
+        show:
+            Whether to display with matplotlib.
+
+        point_size:
+            Size of point marker.
+
+        box_alpha:
+            Transparency of bbox.
+
+        title:
+            Optional figure title.
+    """
+
+    # ============================================================
+    # 1. Load image
+    # ============================================================
+
+    if isinstance(image, str):
+        image = Image.open(image).convert("RGB")
+        image = np.asarray(image)
+
+    elif isinstance(image, Image.Image):
+        image = image.convert("RGB")
+        image = np.asarray(image)
+
+    elif torch.is_tensor(image):
+        image = image.detach().cpu()
+
+        # CHW -> HWC
+        if image.ndim == 3:
+            if image.shape[0] in [1, 3]:
+                image = image.permute(1, 2, 0)
+
+        image = image.numpy()
+
+    elif isinstance(image, np.ndarray):
+        pass
+
+    else:
+        raise TypeError(f"Unsupported image type: {type(image)}")
+
+    # ============================================================
+    # 2. Normalize image for visualization
+    # ============================================================
+
+    if image.dtype != np.uint8:
+        image_min = image.min()
+        image_max = image.max()
+
+        if image_max > image_min:
+            image = ((image - image_min) / (image_max - image_min) * 255).astype(
+                np.uint8
+            )
+
+        else:
+            image = np.zeros_like(image, dtype=np.uint8)
+
+    # Grayscale -> RGB
+    if image.ndim == 2:
+        image = np.stack([image] * 3, axis=-1)
+
+    H, W = image.shape[:2]
+
+    # ============================================================
+    # 3. Get target boxes
+    # ============================================================
+
+    boxes = target["boxes"]
+
+    if torch.is_tensor(boxes):
+        boxes = boxes.detach().cpu()
+
+    boxes = boxes.float().numpy()
+
+    if boxes.ndim != 2 or boxes.shape[1] < 2:
+        raise ValueError(f"Expected boxes [N,4], got {boxes.shape}")
+
+    # ============================================================
+    # 4. Create figure
+    # ============================================================
+
+    fig, ax = plt.subplots(figsize=(16, 10))
+
+    ax.imshow(image)
+
+    # ============================================================
+    # 5. Draw every target
+    # ============================================================
+
+    for i, box in enumerate(boxes):
+        cx_norm = float(box[0])
+        cy_norm = float(box[1])
+
+        # --------------------------------------------------------
+        # normalized [0,1] -> original image pixel
+        # --------------------------------------------------------
+
+        cx = cx_norm * W
+        cy = cy_norm * H
+
+        # --------------------------------------------------------
+        # Draw point
+        # --------------------------------------------------------
+
+        ax.scatter(
+            cx,
+            cy,
+            s=point_size,
+            marker="x",
+            linewidths=2,
+        )
+
+        # --------------------------------------------------------
+        # Instance index
+        # --------------------------------------------------------
+
+        ax.text(
+            cx + 4,
+            cy - 4,
+            str(i),
+            fontsize=9,
+            fontweight="bold",
+            bbox=dict(
+                facecolor="white",
+                alpha=0.7,
+                edgecolor="none",
+                pad=1,
+            ),
+        )
+
+        # --------------------------------------------------------
+        # Draw bbox if width/height are meaningful
+        #
+        # Your task currently treats boxes as points.
+        # Therefore if w/h == 0 or extremely small,
+        # we DON'T draw a bbox.
+        # --------------------------------------------------------
+
+        if boxes.shape[1] >= 4:
+            w_norm = float(box[2])
+            h_norm = float(box[3])
+
+            # If actual bbox exists
+            if w_norm > 1e-6 and h_norm > 1e-6:
+                bw = w_norm * W
+                bh = h_norm * H
+
+                x1 = cx - bw / 2
+                y1 = cy - bh / 2
+
+                rect = patches.Rectangle(
+                    (
+                        x1,
+                        y1,
+                    ),
+                    bw,
+                    bh,
+                    fill=False,
+                    linewidth=1.5,
+                    alpha=box_alpha,
+                )
+
+                ax.add_patch(rect)
+
+    # ============================================================
+    # 6. Figure settings
+    # ============================================================
+
+    ax.set_xlim(
+        0,
+        W,
+    )
+
+    ax.set_ylim(
+        H,
+        0,
+    )
+
+    ax.set_xlabel("x (pixel)")
+
+    ax.set_ylabel("y (pixel)")
+
+    if title is None:
+        title = f"Target points (N={len(boxes)})"
+
+    ax.set_title(title)
+
+    ax.grid(False)
+
+    plt.tight_layout()
+
+    if save_path is not None:
+        os.makedirs(
+            os.path.dirname(save_path) or ".",
+            exist_ok=True,
+        )
+
+        plt.savefig(
+            save_path,
+            dpi=200,
+            bbox_inches="tight",
+        )
+
+        print(f"Saved visualization to: {save_path}")
+
+    if show:
+        plt.show()
+
+    else:
+        plt.close(fig)
+
+    return fig, ax
 
 class GroundingDINO(nn.Module):
     """This is the Cross-Attention Detector module that performs object detection"""
@@ -947,9 +1195,16 @@ class SetCriterion(nn.Module):
 
         assert "pred_masks" in outputs
 
+
+
         src_idx = self._get_src_permutation_idx(indices)
         tgt_idx = self._get_tgt_permutation_idx(indices)
         src_masks = outputs["pred_masks"]
+
+
+        print(outputs.keys(), len(targets), targets[0].keys(),targets[0]["boxes"] ,targets[0]["image_id"] )
+        assert 1 == 0
+
         # pred masks are at stride-4 resolution of the PADDED image canvas
         # (the model saw the collate-padded NestedTensor). Recover the padded
         # full-res size so GT masks live in the same normalized coordinate

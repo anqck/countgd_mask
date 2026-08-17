@@ -181,6 +181,8 @@ class ODVGDataset(VisionDataset):
         image = Image.open(abs_path).convert("RGB")
         exemplars = torch.tensor(meta["exemplars"], dtype=torch.int64)
 
+        
+
         # print(self.dataset_mode )
         # assert 1 == 0
 
@@ -242,6 +244,7 @@ class ODVGDataset(VisionDataset):
         target["labels"] = classes
         target["exemplars"] = exemplars
         target["labels_uncropped"] = torch.clone(classes)
+        
         if self.segm_masks_dir is not None:
             rel_stem = os.path.splitext(rel_path)[0]
             mask_abs_path = os.path.join(
