@@ -14,8 +14,10 @@
 # Modified from Deformable DETR (https://github.com/fundamentalvision/Deformable-DETR)
 # Copyright (c) 2020 SenseTime. All Rights Reserved.
 # ------------------------------------------------------------------------
+from collections.abc import Sequence
 import copy
 from typing import Any, Literal
+import math
 
 import torch
 import torch.nn.functional as F
@@ -50,6 +52,7 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+
 
 def visualize_target_points(
     image,
@@ -294,6 +297,7 @@ def visualize_target_points(
 
     return fig, ax
 
+
 class GroundingDINO(nn.Module):
     """This is the Cross-Attention Detector module that performs object detection"""
 
@@ -302,7 +306,7 @@ class GroundingDINO(nn.Module):
         backbone: Joiner,
         transformer: Transformer,
         mask_head: MaskHead,
-        num_queries: int,        
+        num_queries: int,
         aux_loss=False,
         iter_update=False,
         query_dim=2,
@@ -321,7 +325,6 @@ class GroundingDINO(nn.Module):
         text_encoder_type="bert-base-uncased",
         sub_sentence_present=True,
         max_text_len=256,
-        
     ):
         """Initializes the model.
         Parameters:
@@ -403,9 +406,9 @@ class GroundingDINO(nn.Module):
                 in_channels = self.hidden_dim
             self.input_proj = nn.ModuleList(input_proj_list)
         else:  # dead branch
-            assert two_stage_type == "no", (
-                "two_stage_type should be no if num_feature_levels=1 !!!"
-            )
+            assert (
+                two_stage_type == "no"
+            ), "two_stage_type should be no if num_feature_levels=1 !!!"
             self.input_proj = nn.ModuleList(
                 [
                     nn.Sequential(
@@ -429,8 +432,12 @@ class GroundingDINO(nn.Module):
         _class_embed = ContrastiveEmbed()
 
         _bbox_embed = MLP(self.hidden_dim, self.hidden_dim, 4, 3)
-        nn.init.constant_(_bbox_embed.layers[-1].weight.data, 0)  # ty: ignore[invalid-argument-type]
-        nn.init.constant_(_bbox_embed.layers[-1].bias.data, 0)  # ty: ignore[invalid-argument-type]
+        nn.init.constant_(
+            _bbox_embed.layers[-1].weight.data, 0
+        )  # ty: ignore[invalid-argument-type]
+        nn.init.constant_(
+            _bbox_embed.layers[-1].bias.data, 0
+        )  # ty: ignore[invalid-argument-type]
 
         # dec_pred_bbox_embed_share=True
         if dec_pred_bbox_embed_share:
@@ -449,9 +456,10 @@ class GroundingDINO(nn.Module):
 
         # two stage
         self.two_stage_type = two_stage_type
-        assert two_stage_type in ["no", "standard"], (
-            f"unknown param {two_stage_type} of two_stage_type"
-        )
+        assert two_stage_type in [
+            "no",
+            "standard",
+        ], f"unknown param {two_stage_type} of two_stage_type"
         if two_stage_type != "no":
             if two_stage_bbox_embed_share:
                 assert dec_pred_bbox_embed_share
@@ -469,7 +477,6 @@ class GroundingDINO(nn.Module):
 
         self.mask_head = mask_head
         self._reset_parameters()
-
 
     def _reset_parameters(self):
         # init input_proj
@@ -602,7 +609,7 @@ class GroundingDINO(nn.Module):
             (h, w) are the spatial dimensions of the first input feature map.
             Used downstream to extract visual exemplar tokens via RoIAlign.
         """
-        (_bs, _c, h, w) = (
+        _bs, _c, h, w = (
             features[0].decompose()[0].shape[-4],
             features[0].decompose()[0].shape[-3],
             features[0].decompose()[0].shape[-2],
@@ -720,7 +727,9 @@ class GroundingDINO(nn.Module):
         }
 
         if isinstance(samples, (list, torch.Tensor)):
-            samples = nested_tensor_from_tensor_list(samples)  # ty: ignore[invalid-argument-type]
+            samples = nested_tensor_from_tensor_list(
+                samples
+            )  # ty: ignore[invalid-argument-type]
 
         features: list[NestedTensor]
         poss: list[torch.Tensor]
@@ -793,10 +802,7 @@ class GroundingDINO(nn.Module):
             input_query_label,
             attn_mask,
             text_dict,
-            
         )
-
-        
 
         # deformable-detr-like anchor update
         outputs_coord_list = []
@@ -816,14 +822,20 @@ class GroundingDINO(nn.Module):
             ]
         )
 
-        (_mask_features, pred_masks_per_dec_layer, interm_masks) = self.mask_head(hs, memory, spatial_shapes, backbone_layer_0=layer0,tgt_undetach= tgt_undetach, outputs_coord=outputs_coord_list )
+        _mask_features, pred_masks_per_dec_layer, interm_masks = self.mask_head(
+            hs,
+            memory,
+            spatial_shapes,
+            backbone_layer_0=layer0,
+            tgt_undetach=tgt_undetach,
+            outputs_coord=outputs_coord_list,
+        )
 
         out = {
             "pred_logits": outputs_class[-1],
             "pred_boxes": outputs_coord_list[-1],
         }
 
-        
         if pred_masks_per_dec_layer:
             out["pred_masks"] = pred_masks_per_dec_layer[-1]
 
@@ -859,7 +871,6 @@ class GroundingDINO(nn.Module):
             #     "pred_boxes": init_box_proposal,
             # }
 
-        
         return out
 
     @torch.jit.unused
@@ -1081,227 +1092,217 @@ class SetCriterion(nn.Module):
         """Compute the losses related to the masks: the focal loss and the dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
-
-        def calculate_uncertainty(logits):
-            """
-            We estimate uncerainty as L1 distance between 0.0 and the logit prediction in 'logits' for the
-                foreground class in `classes`.
-            Args:
-                logits (Tensor): A tensor of shape (R, 1, ...) for class-specific or
-                    class-agnostic, where R is the total number of predicted masks in all images and C is
-                    the number of foreground classes. The values are logits.
-            Returns:
-                scores (Tensor): A tensor of shape (R, 1, ...) that contains uncertainty scores with
-                    the most uncertain locations having the highest uncertainty score.
-            """
-            assert logits.shape[1] == 1
-            gt_class_logits = logits.clone()
-            return -(torch.abs(gt_class_logits))
-
-        def point_sample(input, point_coords, **kwargs):
-            """
-            A wrapper around :function:`torch.nn.functional.grid_sample` to support 3D point_coords tensors.
-            Unlike :function:`torch.nn.functional.grid_sample` it assumes `point_coords` to lie inside
-            [0, 1] x [0, 1] square.
-
-            Args:
-                input (Tensor): A tensor of shape (N, C, H, W) that contains features map on a H x W grid.
-                point_coords (Tensor): A tensor of shape (N, P, 2) or (N, Hgrid, Wgrid, 2) that contains
-                [0, 1] x [0, 1] normalized point coordinates.
-
-            Returns:
-                output (Tensor): A tensor of shape (N, C, P) or (N, C, Hgrid, Wgrid) that contains
-                    features for points in `point_coords`. The features are obtained via bilinear
-                    interplation from `input` the same way as :function:`torch.nn.functional.grid_sample`.
-            """
-            add_dim = False
-            if point_coords.dim() == 3:
-                add_dim = True
-                point_coords = point_coords.unsqueeze(2)
-            output = F.grid_sample(input, 2.0 * point_coords - 1.0, **kwargs)
-            if add_dim:
-                output = output.squeeze(3)
-            return output
-
-        def get_uncertain_point_coords_with_randomness(
-            coarse_logits,
-            uncertainty_func,
-            num_points,
-            oversample_ratio,
-            importance_sample_ratio,
-            valid_scale=None,
-        ):
-            """
-            Sample points in [0, 1] x [0, 1] coordinate space based on their uncertainty. The unceratinties
-                are calculated for each point using 'uncertainty_func' function that takes point's logit
-                prediction as input.
-            See PointRend paper for details.
-
-            Args:
-                coarse_logits (Tensor): A tensor of shape (N, C, Hmask, Wmask) or (N, 1, Hmask, Wmask) for
-                    class-specific or class-agnostic prediction.
-                uncertainty_func: A function that takes a Tensor of shape (N, C, P) or (N, 1, P) that
-                    contains logit predictions for P points and returns their uncertainties as a Tensor of
-                    shape (N, 1, P).
-                num_points (int): The number of points P to sample.
-                oversample_ratio (int): Oversampling parameter.
-                importance_sample_ratio (float): Ratio of points that are sampled via importnace sampling.
-                valid_scale (Tensor, optional): Tensor of shape (N, 1, 2) containing valid (sx, sy) scale
-                    ratios to restrict sampling to unpadded image regions.
-
-            Returns:
-                point_coords (Tensor): A tensor of shape (N, P, 2) that contains the coordinates of P
-                    sampled points.
-            """
-            assert oversample_ratio >= 1
-            assert importance_sample_ratio <= 1 and importance_sample_ratio >= 0
-            num_boxes = coarse_logits.shape[0]
-            num_sampled = int(num_points * oversample_ratio)
-            point_coords = torch.rand(
-                num_boxes, num_sampled, 2, device=coarse_logits.device
-            )
-            if valid_scale is not None:
-                point_coords = point_coords * valid_scale
-            point_logits = point_sample(
-                coarse_logits, point_coords, align_corners=False
-            )
-            point_uncertainties = uncertainty_func(point_logits)
-            num_uncertain_points = int(importance_sample_ratio * num_points)
-            num_random_points = num_points - num_uncertain_points
-            idx = torch.topk(
-                point_uncertainties[:, 0, :], k=num_uncertain_points, dim=1
-            )[1]
-            shift = num_sampled * torch.arange(
-                num_boxes, dtype=torch.long, device=coarse_logits.device
-            )
-            idx += shift[:, None]
-            point_coords = point_coords.view(-1, 2)[idx.view(-1), :].view(
-                num_boxes, num_uncertain_points, 2
-            )
-            if num_random_points > 0:
-                rand_coords = torch.rand(
-                    num_boxes, num_random_points, 2, device=coarse_logits.device
-                )
-                if valid_scale is not None:
-                    rand_coords = rand_coords * valid_scale
-                point_coords = torch.cat(
-                    [
-                        point_coords,
-                        rand_coords,
-                    ],
-                    dim=1,
-                )
-            return point_coords
-
         assert "pred_masks" in outputs
 
+        def generate_gt_density(
+            pts: torch.Tensor,
+            shape: torch.Tensor | Sequence[int],
+            s_factor: float = 8.0,
+            normalize: bool = False,
+        ) -> torch.Tensor:
+            """
+            Generate per-point continuous GT Gaussian density maps on GPU.
 
+            Args:
+                pts (torch.Tensor[float32]): [N, 2] normalized coordinates (x, y) in range [0, 1].
+                    Can be passed directly from bounding box centers `boxes[:, :2]`.
+                shape (tuple[int, int] | Sequence[int]): The (H, W) spatial resolution of the sampled canvas.
+                s_factor (float): Divisor used to derive Gaussian standard deviation (sigma)
+                    from the 1st nearest neighbor distance.
+                normalize (bool): If True, normalizes each map such that the 2D continuous
+                    integral equals 1. If False, peak amplitude at point center is 1.
+
+            Returns:
+                torch.Tensor[float32]: [N, H, W] Gaussian density maps for each GT point.
+            """
+            H, W = int(shape[0]), int(shape[1])
+            N = pts.shape[0]
+
+            if N == 0:
+                return torch.zeros((0, H, W), dtype=torch.float32, device=pts.device)
+
+            # 1. Denormalize coordinates: x -> [0, W], y -> [0, H]
+            scale = torch.tensor([W, H], dtype=torch.float32, device=pts.device)
+            pts_px = (
+                pts[:, :2] * scale
+            )  # [N, 2] -> col 0: x (pixels), col 1: y (pixels)
+
+            x_center = pts_px[:, 0:1]  # [N, 1]
+            y_center = pts_px[:, 1:2]  # [N, 1]
+
+            # 2. Compute adaptive bandwidth (sigma) via nearest neighbor distance
+            if N == 1:
+                # Fallback for single object: scale relative to image average dimension
+                sigma = (float(H + W) / 2.0) / (4.0 * s_factor)
+            else:
+                dists = torch.cdist(pts_px, pts_px, p=2.0)
+                dists.fill_diagonal_(torch.inf)
+                knn_dists, _ = torch.topk(dists, k=1, largest=False, dim=-1)
+                sigma = (knn_dists.mean() / s_factor).clamp(min=1e-4).item()
+
+            inv_two_var = 1.0 / (2.0 * (sigma**2))
+
+            # 3. 1D Coordinate grids along height (Y) and width (X)
+            # [1, H]
+            y_grid = torch.arange(H, dtype=torch.float32, device=pts.device).unsqueeze(
+                0
+            )
+            # [1, W]
+            x_grid = torch.arange(W, dtype=torch.float32, device=pts.device).unsqueeze(
+                0
+            )
+
+            # 4. Separable 1D Gaussian evaluations: O(N * (H + W))
+            gy = torch.exp(-((y_grid - y_center) ** 2) * inv_two_var)  # [N, H]
+            gx = torch.exp(-((x_grid - x_center) ** 2) * inv_two_var)  # [N, W]
+
+            # 5. Outer product broadcasting: [N, H, 1] * [N, 1, W] -> [N, H, W]
+            density = gy.unsqueeze(-1) * gx.unsqueeze(-2)
+
+            # 6. Integral normalization
+            if normalize:
+                density = density / (2.0 * math.pi * (sigma**2))
+
+            return density
+
+        def visualize_output_and_save(
+            input_, output, save_path="", figsize=(20, 12), dots=None
+        ):
+            """
+            dots: Nx2 numpy array for the ground truth locations of the dot annotation
+                if dots is None, this information is not available
+            """
+            # 1. Extract batch dimensions [C, H_pad, W_pad] and unpadded dimensions (H_orig, W_orig)
+            # image = targets[0]["samples"]
+            # pt = targets[0]["boxes"]
+
+            # image = F.interpolate(
+            #     image.unsqueeze(0),
+            #     scale_factor=0.25,
+            #     mode="bilinear",
+            #     align_corners=False,
+            # ).squeeze(0)
+            # # 2. Convert sample image directly to numpy format [H_pad, W_pad, C]
+            # if image.dtype != torch.uint8:
+            #     mean = torch.tensor([0.485, 0.456, 0.406], device=image.device).view(
+            #         3, 1, 1
+            #     )
+            #     std = torch.tensor([0.229, 0.224, 0.225], device=image.device).view(3, 1, 1)
+            #     image_denorm = (image * std + mean).clamp(0, 1)
+            #     image_np = (
+            #         (image_denorm.detach().cpu() * 255)
+            #         .to(torch.uint8)
+            #         .permute(1, 2, 0)
+            #         .numpy()
+            #     )
+            # else:
+            #     image_np = image.detach().cpu().permute(1, 2, 0).numpy()
+            # format_for_plotting(denormalize(input_))
+            output = output
+            dots = dots
+
+            # get the total count
+            pred_cnt = output.sum().item()
+            img1 = input_
+            # output = format_for_plotting(output)
+
+            fig = plt.figure(figsize=figsize)
+
+            # display the input image
+            ax = fig.add_subplot(2, 2, 1)
+            ax.set_axis_off()
+            ax.imshow(img1)
+            if dots is not None:
+                ax.scatter(dots[:, 0], dots[:, 1], c="red", edgecolors="blue")
+                # ax.scatter(dots[:,0], dots[:,1], c='black', marker='+')
+                ax.set_title("Input image, gt count: {}".format(dots.shape[0]))
+            else:
+                ax.set_title("Input image")
+
+            ax = fig.add_subplot(2, 2, 2)
+            ax.set_axis_off()
+            ax.set_title("Overlaid result, predicted count: {:.2f}".format(pred_cnt))
+
+            img2 = (
+                0.2989 * img1[:, :, 0] + 0.5870 * img1[:, :, 1] + 0.1140 * img1[:, :, 2]
+            )
+            ax.imshow(img2, cmap="gray")
+            ax.imshow(output, cmap=plt.cm.viridis, alpha=0.5)
+
+            # # display the density map
+            ax = fig.add_subplot(2, 2, 3)
+            ax.set_axis_off()
+            ax.set_title("Density map, predicted count: {:.2f}".format(pred_cnt))
+            ax.imshow(output)
+            # plt.colorbar()
+
+            # ax = fig.add_subplot(2, 2, 4)
+            ax.set_axis_off()
+            ax.set_title("Density map, predicted count: {:.2f}".format(pred_cnt))
+            ret_fig = ax.imshow(output)
+            fig.colorbar(ret_fig, ax=ax)
+            fig.savefig("./output.png", bbox_inches="tight")
+            # fig.show()
+            plt.close()
 
         src_idx = self._get_src_permutation_idx(indices)
         tgt_idx = self._get_tgt_permutation_idx(indices)
         src_masks = outputs["pred_masks"]
 
+        if src_masks.numel() == 0 or num_masks == 0:
+            return {
+                "loss_mask": src_masks.sum() * 0.0,
+                "loss_dice": torch.tensor(0.0, device=outputs["pred_masks"].device),
+            }
 
-        print(outputs.keys(), len(targets), targets[0].keys(),targets[0]["boxes"] ,targets[0]["image_id"] )
-        assert 1 == 0
+        H_pad, W_pad = src_masks.shape[2:]
 
-        # pred masks are at stride-4 resolution of the PADDED image canvas
-        # (the model saw the collate-padded NestedTensor). Recover the padded
-        # full-res size so GT masks live in the same normalized coordinate
-        # space as the predictions before point sampling.
-        padded_size = (src_masks.shape[-2] * 4, src_masks.shape[-1] * 4)
-        src_masks = src_masks[src_idx]
-        masks = [t["masks"] for t in targets]
-        padded_masks = []
-        for m in masks:
-            m = m.float()
-            # Crop if GT is slightly larger than the canvas (canvas size may not
-            # be divisible by the stride), then bottom-right pad to the canvas.
-            m = m[..., : padded_size[0], : padded_size[1]]
-            pad_h = padded_size[0] - m.shape[-2]
-            pad_w = padded_size[1] - m.shape[-1]
-            if pad_h > 0 or pad_w > 0:
-                m = F.pad(m, (0, pad_w, 0, pad_h))
-            padded_masks.append(m)
-        # Flat [N_total, H, W]; select matched instances via flat indices since
-        # images have differing instance counts (no 4D [bs, n, h, w] tensor).
-        target_masks_flat = torch.cat(padded_masks, dim=0).to(src_masks)
+        # 1. Generate and pad GT density maps for all batch targets
+        padded_densities = []
+        for t in targets:
+            pt = t["boxes"]
+            if len(pt) == 0:
+                continue
+
+            boxes_norm = pt[:, 1:] if pt.shape[-1] == 5 else pt
+            pts = boxes_norm[:, :2]
+
+            H_orig, W_orig = int(t["size"][0]), int(t["size"][1])
+            H_tgt, W_tgt = H_orig // 4, W_orig // 4
+
+            gt_density = generate_gt_density(
+                pts=pts,
+                shape=(H_tgt, W_tgt),
+                s_factor=8.0,
+                normalize=True,
+            )
+
+            pad_w = max(0, W_pad - W_tgt)
+            pad_h = max(0, H_pad - H_tgt)
+            if pad_w > 0 or pad_h > 0:
+                gt_density = F.pad(gt_density, (0, pad_w, 0, pad_h))
+            gt_density = gt_density[:, :H_pad, :W_pad]
+            padded_densities.append(gt_density)
+
+        # 2. Match GT density maps to predicted masks using matcher target indices
+        target_densities_flat = torch.cat(padded_densities, dim=0).to(src_masks.device)
         batch_idx, tgt_inst_idx = tgt_idx
         offsets = torch.tensor(
-            [0] + [m.shape[0] for m in padded_masks], device=src_masks.device
+            [0] + [d.shape[0] for d in padded_densities], device=src_masks.device
         ).cumsum(0)
         flat_tgt_idx = offsets[batch_idx.to(src_masks.device)] + tgt_inst_idx.to(
             src_masks.device
         )
-        target_masks = target_masks_flat[flat_tgt_idx]
+        target_densities = target_densities_flat[flat_tgt_idx]
 
-        # Compute valid image region scale (sx, sy) for each matched instance to restrict
-        # point sampling strictly within unpadded valid image boundaries.
-        valid_scales = []
-        for m in masks:
-            h_orig = m.shape[-2] if m.dim() >= 2 else padded_size[0]
-            w_orig = m.shape[-1] if m.dim() >= 2 else padded_size[1]
-            sy = min(h_orig, padded_size[0]) / padded_size[0]
-            sx = min(w_orig, padded_size[1]) / padded_size[1]
-            valid_scales.append((sx, sy))
-        valid_scales_tensor = torch.tensor(
-            valid_scales, device=src_masks.device, dtype=src_masks.dtype
-        )
-        valid_scale = valid_scales_tensor[batch_idx.to(src_masks.device)][:, None, :]
-
-        # print("\n===== VALID SCALE DEBUG =====")
-        # print("src_masks:", src_masks.shape)
-
-        # for b, m in enumerate(masks):
-        #     print(
-        #         f"image {b}: "
-        #         f"GT mask = {tuple(m.shape)}, "
-        #         f"padded = {padded_size}, "
-        #         f"valid_scale = {valid_scales_tensor[b].tolist()}"
-        #     )
-
-        # print(
-        #     "matched valid_scale:",
-        #     valid_scale[:10, 0].detach().cpu().tolist()
-        # )
-        # print("============================\n")
-        # assert 1 == 0
-
-        # No need to upsample predictions as we are using normalized coordinates
-        # N x 1 x H x W
-        src_masks = src_masks[:, None]
-        target_masks = target_masks[:, None]
-
-        with torch.no_grad():
-            # sample point_coords within valid image boundaries
-            point_coords = get_uncertain_point_coords_with_randomness(
-                src_masks,
-                lambda logits: calculate_uncertainty(logits),
-                self.num_points,
-                self.oversample_ratio,
-                self.importance_sample_ratio,
-                valid_scale=valid_scale,
-            )
-            # get gt labels
-            point_labels = point_sample(
-                target_masks,
-                point_coords,
-                align_corners=False,
-            ).squeeze(1)
-
-        point_logits = point_sample(
-            src_masks,
-            point_coords,
-            align_corners=False,
-        ).squeeze(1)
+        # 3. Calculate L2 loss
+        loss_mask = F.mse_loss(src_masks, target_densities, reduction="sum") / num_masks
 
         losses = {
-            "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),
-            "loss_dice": dice_loss_jit(point_logits, point_labels, num_masks),
+            "loss_mask": loss_mask,
+            "loss_dice": torch.tensor(0.0, device=src_masks.device),
         }
 
-        del src_masks
-        del target_masks
         return losses
 
     def forward(self, outputs, targets, cat_list, caption, return_indices=False):
@@ -1334,7 +1335,6 @@ class SetCriterion(nn.Module):
 
             label_map_list.append(label_map)
 
-
         for j in range(len(cat_list)):  # bs
             for_match = {
                 "pred_logits": outputs["pred_logits"][j].unsqueeze(0),
@@ -1343,14 +1343,11 @@ class SetCriterion(nn.Module):
             if "pred_masks" in outputs:
                 for_match["pred_masks"] = outputs["pred_masks"][j].unsqueeze(0)
 
-
             inds = self.matcher(for_match, [targets[j]], label_map_list[j])
             indices.extend(inds)
         # indices : A list of size batch_size, containing tuples of (index_i, index_j) where:
         # - index_i is the indices of the selected predictions (in order)
         # - index_j is the indices of the corresponding selected targets (in order)
-
-
 
         # import pdb; pdb.set_trace()
         tgt_ids = [v["labels"].cpu() for v in targets]
@@ -1564,12 +1561,11 @@ def build_groundingdino(
         "loss_bbox": args.bbox_loss_coef,  # 1.0
         "loss_giou": args.giou_loss_coef,  # 0.0
         "loss_mask": 0,
-        "loss_dice": 0
+        "loss_dice": 0,
     }
     weight_dict["loss_mask"] = args.mask_loss_coef
     weight_dict["loss_dice"] = args.dice_loss_coef
     # if generate_mask:
-
 
     clean_weight_dict = copy.deepcopy(weight_dict)
 
@@ -1588,12 +1584,16 @@ def build_groundingdino(
     if generate_mask and args.two_stage_type != "no":
         _coeff_weight_dict = {
             "loss_ce": args.cls_loss_coef,
-            "loss_bbox": 1.0
-            if getattr(args, "no_interm_box_loss", False)
-            else args.bbox_loss_coef,
-            "loss_giou": 1.0
-            if getattr(args, "no_interm_box_loss", False)
-            else args.giou_loss_coef,
+            "loss_bbox": (
+                1.0
+                if getattr(args, "no_interm_box_loss", False)
+                else args.bbox_loss_coef
+            ),
+            "loss_giou": (
+                1.0
+                if getattr(args, "no_interm_box_loss", False)
+                else args.giou_loss_coef
+            ),
         }
         _coeff_weight_dict["loss_mask"] = args.mask_loss_coef
         _coeff_weight_dict["loss_dice"] = args.dice_loss_coef
@@ -1602,7 +1602,6 @@ def build_groundingdino(
             for k, v in _coeff_weight_dict.items()
         }
         weight_dict.update(interm_weight_dict)
-
 
         # print(weight_dict)
         # assert 1 == 0
@@ -1689,9 +1688,11 @@ def build_groundingdino(
             weight_dict=weight_dict,  # loss weight coeffs
             focal_alpha=args.focal_alpha,  # 0.25
             focal_gamma=args.focal_gamma,  # 2.0
-            losses=["labels", "boxes"]
-            if not generate_mask
-            else ["labels", "boxes", "masks"],
+            losses=(
+                ["labels", "boxes"]
+                if not generate_mask
+                else ["labels", "boxes", "masks"]
+            ),
             num_points=getattr(args, "mask_num_points", 112 * 112),
             oversample_ratio=getattr(args, "mask_oversample_ratio", 3.0),
             importance_sample_ratio=getattr(args, "mask_importance_sample_ratio", 0.75),

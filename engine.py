@@ -356,12 +356,19 @@ def train_one_epoch(
                 print(
                     "WARNING: Exemp shape greater than 3!!! Only 3 exemplars allowed during training"
                 )
+        # print(targets)
         targets = [
             {k: v.to(device) for k, v in t.items() if torch.is_tensor(v)}
             for t in targets
         ]
+
         with torch.cuda.amp.autocast(enabled=args.amp):
             outputs = model(samples, exemplars, labels_uncropped, captions=captions)
+            # print(targets[0].keys())
+            # assert 1 == 0
+            # for i in targets
+            # targets[0]["samples"] = samples.decompose()[0][0]
+            # targets[1]["samples"] = samples.decompose()[0][1]
             loss_dict = criterion(outputs, targets, cap_list, captions)
 
             weight_dict = criterion.weight_dict

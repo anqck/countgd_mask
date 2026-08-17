@@ -4,7 +4,7 @@ import os.path
 import random
 import sys
 from collections.abc import Callable
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -120,6 +120,7 @@ from PIL import Image
 #     else:
 #         plt.show()
 
+
 class ODVGDataset(VisionDataset):
     """
     Args:
@@ -181,8 +182,6 @@ class ODVGDataset(VisionDataset):
         image = Image.open(abs_path).convert("RGB")
         exemplars = torch.tensor(meta["exemplars"], dtype=torch.int64)
 
-        
-
         # print(self.dataset_mode )
         # assert 1 == 0
 
@@ -190,7 +189,7 @@ class ODVGDataset(VisionDataset):
         if self.dataset_mode == "OD":
             anno = meta["detection"]
             instances = [obj for obj in anno["instances"]]
-            boxes = [obj["bbox"] for obj in instances]
+            boxes: list[Any] = [obj["bbox"] for obj in instances]
             # generate vg_labels
             # pos bbox labels
             ori_classes = [str(obj["label"]) for obj in instances]
@@ -244,7 +243,7 @@ class ODVGDataset(VisionDataset):
         target["labels"] = classes
         target["exemplars"] = exemplars
         target["labels_uncropped"] = torch.clone(classes)
-        
+
         if self.segm_masks_dir is not None:
             rel_stem = os.path.splitext(rel_path)[0]
             mask_abs_path = os.path.join(
@@ -272,14 +271,14 @@ class ODVGDataset(VisionDataset):
             assert target["labels"][0] == target["labels_uncropped"][0]
             # print("asserted")
         # size, cap_list, caption, bboxes, labels
-        
+
         # print("filename:", rel_path)
         # print("exemplars.shape:", exemplars.shape)
         # print("exemplars.dtype:", exemplars.dtype)
         # print("exemplars[0]:", exemplars[0])
         # print("boxes.shape:", boxes.shape)
         # print("masks.shape:", masks.shape)
-        
+
         # visualize_box_mask_pairs(
         #     image=image,
         #     boxes=boxes,
