@@ -304,6 +304,18 @@ class HungarianMatcher(nn.Module):
             cost_mask = cost_mask.flatten(0, 1)
             cost_dice = cost_dice.flatten(0, 1)
 
+            assert torch.isfinite(cost_mask).all(), (
+                f"cost_mask contains NaN/Inf: "
+                f"min={cost_mask.nan_to_num().min().item()}, "
+                f"max={cost_mask.nan_to_num().max().item()}"
+            )
+
+            assert torch.isfinite(cost_dice).all(), (
+                f"cost_dice contains NaN/Inf: "
+                f"min={cost_dice.nan_to_num().min().item()}, "
+                f"max={cost_dice.nan_to_num().max().item()}"
+            )
+
             C = (
             self.cost_bbox * cost_bbox
             + self.cost_class * cost_class

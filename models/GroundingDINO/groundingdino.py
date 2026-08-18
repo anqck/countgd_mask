@@ -1098,7 +1098,7 @@ class SetCriterion(nn.Module):
 
         losses = {
             "loss_mask": loss_mask,
-            "loss_dice": 0,
+            "loss_dice": loss_dice,
         }
 
         del src_masks
