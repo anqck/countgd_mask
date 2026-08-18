@@ -997,7 +997,6 @@ class SetCriterion(nn.Module):
         valid_masks = []
 
         for m in masks:
-
             h_orig = m.shape[-2]
             w_orig = m.shape[-1]
 
@@ -1032,24 +1031,6 @@ class SetCriterion(nn.Module):
 
         # Select valid region corresponding to matched masks
         valid_mask = valid_masks[batch_idx]
-
-        # print("\n===== VALID SCALE DEBUG =====")
-        # print("src_masks:", src_masks.shape)
-
-        # for b, m in enumerate(masks):
-        #     print(
-        #         f"image {b}: "
-        #         f"GT mask = {tuple(m.shape)}, "
-        #         f"padded = {padded_size}, "
-        #         f"valid_scale = {valid_scales_tensor[b].tolist()}"
-        #     )
-
-        # print(
-        #     "matched valid_scale:",
-        #     valid_scale[:10, 0].detach().cpu().tolist()
-        # )
-        # print("============================\n")
-        # assert 1 == 0
 
         # No need to upsample predictions as we are using normalized coordinates
         # N x 1 x H x W
@@ -1090,6 +1071,30 @@ class SetCriterion(nn.Module):
         #     point_coords,
         #     align_corners=False,
         # ).squeeze(1)
+
+        pred_probs = src_masks.sigmoid()
+
+        pred_probs = pred_probs * valid_mask
+        target_masks_dice = target_masks * valid_mask
+
+        pred_flat = pred_probs.flatten(1)
+        target_flat = target_masks_dice.flatten(1)
+
+        numerator = 2.0 * (
+            pred_flat * target_flat
+        ).sum(dim=1)
+
+        denominator = (
+            pred_flat.sum(dim=1)
+            + target_flat.sum(dim=1)
+        )
+
+        dice = 1.0 - (
+            (numerator + 1.0)
+            / (denominator + 1.0)
+        )
+
+        loss_dice = dice.sum() / max(num_masks, 1)
 
         losses = {
             "loss_mask": loss_mask,

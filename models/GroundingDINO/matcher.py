@@ -217,62 +217,84 @@ class HungarianMatcher(nn.Module):
                 orig_h = tgt_mask.shape[-2]
                 orig_w = tgt_mask.shape[-1]
 
+                # Crop if necessary
+                tgt_mask = tgt_mask[
+                    ...,
+                    :padded_h,
+                    :padded_w,
+                ]
+
                 # Pad GT to the same canvas
-                pad_h = max(0, padded_h - orig_h)
-                pad_w = max(0, padded_w - orig_w)
+                pad_h = max(0, padded_h - tgt_mask.shape[-2])
+                pad_w = max(0, padded_w - tgt_mask.shape[-1])
 
                 if pad_h > 0 or pad_w > 0:
                     tgt_mask = F.pad(tgt_mask, (0, pad_w, 0, pad_h))
 
-                # Important: normalized valid region
-                sx = min(orig_w, padded_w) / padded_w
-                sy = min(orig_h, padded_h) / padded_h
+                tgt_mask = F.interpolate(
+                    tgt_mask[:, None],
+                    size=(out_mask.shape[-2], out_mask.shape[-1]),
+                    mode="nearest",
+                ).squeeze(1)
 
-                valid_scale = torch.tensor(
-                    [sx, sy],
+                valid = torch.zeros(
+                    (1, 1, padded_h, padded_w),
                     device=out_mask.device,
                     dtype=out_mask.dtype,
                 )
 
-                point_coords = torch.rand(
-                    1,
-                    self.num_points,
-                    2,
-                    device=out_mask.device,
-                )
+                valid_h = min(orig_h, padded_h)
+                valid_w = min(orig_w, padded_w)
 
-                point_coords = point_coords * valid_scale
+                valid[:, :, :valid_h, :valid_w] = 1.0
 
-                out_mask = out_mask[:, None]
-                tgt_mask = tgt_mask[:, None]
+                valid = F.interpolate(
+                    valid,
+                    size=(out_mask.shape[-2], out_mask.shape[-1]),
+                    mode="nearest",
+                )[0, 0]
 
-                # point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
-                tgt_mask = point_sample(
-                    tgt_mask,
-                    point_coords.repeat(tgt_mask.shape[0], 1, 1),
-                    align_corners=False,
-                ).squeeze(1)
+                # [H4, W4]
+                #
+                # Same valid region for every query/target pair.
 
-                out_mask = point_sample(
-                    out_mask,
-                    point_coords.repeat(out_mask.shape[0], 1, 1),
-                    align_corners=False,
-                ).squeeze(1)
+                # =====================================================
+                # 5. Apply valid region
+                # =====================================================
+                out_mask_valid = out_mask * valid
+                tgt_mask_valid = tgt_mask * valid
+
+                # =====================================================
+                # 6. Flatten full masks
+                # =====================================================
+                # [Q, H4, W4] -> [Q, P]
+                # [T, H4, W4] -> [T, P]
+                out_mask_flat = out_mask_valid.flatten(1)
+                tgt_mask_flat = tgt_mask_valid.flatten(1)
+
 
                 # print(point_coords.repeat(out_mask.shape[0], 1, 1),out_mask.shape, tgt_mask.shape)
                 # assert 1 == 0
 
-                with torch.autocast(enabled=False, device_type=out_mask.device.type):
-                    out_mask = out_mask.float()
-                    tgt_mask = tgt_mask.float()
+                with torch.autocast(
+                    enabled=False,
+                    device_type=out_mask.device.type,
+                ):
+                    out_mask_flat = out_mask_flat.float()
+                    tgt_mask_flat = tgt_mask_flat.float()
 
-                   
-                    if out_mask.shape[0] == 0:
-                        mask_l = batch_sigmoid_ce_loss(out_mask, tgt_mask)
-                        dice_l = batch_dice_loss(out_mask, tgt_mask)
-                    else:
-                        mask_l = batch_sigmoid_ce_loss_jit(out_mask, tgt_mask)
-                        dice_l = batch_dice_loss_jit(out_mask, tgt_mask)
+                    # Q x T
+                    mask_l = batch_sigmoid_ce_loss_jit(
+                        out_mask_flat,
+                        tgt_mask_flat,
+                    )
+
+                    # Q x T
+                    dice_l = batch_dice_loss_jit(
+                        out_mask_flat,
+                        tgt_mask_flat,
+                    )
+
 
                 cost_mask[b, :, tgt_idx : tgt_idx + num_tgt] = mask_l
                 cost_dice[b, :, tgt_idx : tgt_idx + num_tgt] = dice_l
@@ -286,7 +308,7 @@ class HungarianMatcher(nn.Module):
             self.cost_bbox * cost_bbox
             + self.cost_class * cost_class
             + self.cost_giou * cost_giou
-            + self.cost_dice * cost_dice
+            # + self.cost_dice * cost_dice
             + self.cost_mask * cost_mask
             )
         else:

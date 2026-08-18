@@ -153,14 +153,14 @@ val_label_list = [
 set_cost_class = 5.0
 set_cost_bbox = 1.0
 set_cost_giou = 0.0
-set_cost_mask = 0.0
+set_cost_mask = 2.0
 set_cost_dice = 0.0
 
 cls_loss_coef = 5.0
 bbox_loss_coef = 1.0
 giou_loss_coef = 0.0
 mask_loss_coef = 2.0
-dice_loss_coef = 2.0
+dice_loss_coef = 0.0
 focal_alpha = 0.25
 focal_gamma = 2.0
 
