@@ -120,7 +120,7 @@ def visualize_masks(
             prob_masks = (
                 masks_tensor.sigmoid() if masks_tensor.min() < 0.0 else masks_tensor
             )
-            binary_masks = (prob_masks > 0.8).numpy()
+            binary_masks = (prob_masks > 0.5).numpy()
 
             num_masks = binary_masks.shape[0]
             print(f"Number of masks prediced {num_masks=}")

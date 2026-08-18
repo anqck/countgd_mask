@@ -955,7 +955,11 @@ class SetCriterion(nn.Module):
         # full-res size so GT masks live in the same normalized coordinate
         # space as the predictions before point sampling.
         padded_size = (src_masks.shape[-2] * 4, src_masks.shape[-1] * 4)
+        padded_h, padded_w = padded_size
+        
         src_masks = src_masks[src_idx]
+
+        
         masks = [t["masks"] for t in targets]
         padded_masks = []
         for m in masks:
@@ -971,6 +975,7 @@ class SetCriterion(nn.Module):
         # Flat [N_total, H, W]; select matched instances via flat indices since
         # images have differing instance counts (no 4D [bs, n, h, w] tensor).
         target_masks_flat = torch.cat(padded_masks, dim=0).to(src_masks)
+
         batch_idx, tgt_inst_idx = tgt_idx
         offsets = torch.tensor(
             [0] + [m.shape[0] for m in padded_masks], device=src_masks.device
@@ -980,19 +985,53 @@ class SetCriterion(nn.Module):
         )
         target_masks = target_masks_flat[flat_tgt_idx]
 
+
+        target_masks = F.interpolate(
+            target_masks[:, None],
+            size=src_masks.shape[-2:],
+            mode="nearest",
+        ).squeeze(1)
+
         # Compute valid image region scale (sx, sy) for each matched instance to restrict
         # point sampling strictly within unpadded valid image boundaries.
-        valid_scales = []
+        valid_masks = []
+
         for m in masks:
-            h_orig = m.shape[-2] if m.dim() >= 2 else padded_size[0]
-            w_orig = m.shape[-1] if m.dim() >= 2 else padded_size[1]
-            sy = min(h_orig, padded_size[0]) / padded_size[0]
-            sx = min(w_orig, padded_size[1]) / padded_size[1]
-            valid_scales.append((sx, sy))
-        valid_scales_tensor = torch.tensor(
-            valid_scales, device=src_masks.device, dtype=src_masks.dtype
+
+            h_orig = m.shape[-2]
+            w_orig = m.shape[-1]
+
+            # Clip to padded canvas
+            h_orig = min(h_orig, padded_h)
+            w_orig = min(w_orig, padded_w)
+
+            valid = torch.zeros(
+                (1, 1, padded_h, padded_w),
+                device=src_masks.device,
+                dtype=src_masks.dtype,
+            )
+
+            valid[:, :, :h_orig, :w_orig] = 1.0
+
+            # Resize to prediction resolution
+            valid = F.interpolate(
+                valid,
+                size=src_masks.shape[-2:],
+                mode="nearest",
+            )
+
+            valid_masks.append(
+                valid[0, 0]
+            )
+
+        # [B, H4, W4]
+        valid_masks = torch.stack(
+            valid_masks,
+            dim=0,
         )
-        valid_scale = valid_scales_tensor[batch_idx.to(src_masks.device)][:, None, :]
+
+        # Select valid region corresponding to matched masks
+        valid_mask = valid_masks[batch_idx]
 
         # print("\n===== VALID SCALE DEBUG =====")
         # print("src_masks:", src_masks.shape)
@@ -1014,35 +1053,47 @@ class SetCriterion(nn.Module):
 
         # No need to upsample predictions as we are using normalized coordinates
         # N x 1 x H x W
-        src_masks = src_masks[:, None]
-        target_masks = target_masks[:, None]
-
-        with torch.no_grad():
-            # sample point_coords within valid image boundaries
-            point_coords = get_uncertain_point_coords_with_randomness(
-                src_masks,
-                lambda logits: calculate_uncertainty(logits),
-                self.num_points,
-                self.oversample_ratio,
-                self.importance_sample_ratio,
-                valid_scale=valid_scale,
-            )
-            # get gt labels
-            point_labels = point_sample(
-                target_masks,
-                point_coords,
-                align_corners=False,
-            ).squeeze(1)
-
-        point_logits = point_sample(
+        bce = F.binary_cross_entropy_with_logits(
             src_masks,
-            point_coords,
-            align_corners=False,
-        ).squeeze(1)
+            target_masks,
+            reduction="none",
+        )
+
+        # Ignore padded region
+        bce = bce * valid_mask
+
+        # Average over valid pixels
+        loss_mask = bce.sum() / valid_mask.sum().clamp(min=1.0)
+        
+        # src_masks = src_masks[:, None]
+        # target_masks = target_masks[:, None]
+
+        # with torch.no_grad():
+        #     # sample point_coords within valid image boundaries
+        #     point_coords = get_uncertain_point_coords_with_randomness(
+        #         src_masks,
+        #         lambda logits: calculate_uncertainty(logits),
+        #         self.num_points,
+        #         self.oversample_ratio,
+        #         self.importance_sample_ratio,
+        #         valid_scale=valid_scale,
+        #     )
+        #     # get gt labels
+        #     point_labels = point_sample(
+        #         target_masks,
+        #         point_coords,
+        #         align_corners=False,
+        #     ).squeeze(1)
+
+        # point_logits = point_sample(
+        #     src_masks,
+        #     point_coords,
+        #     align_corners=False,
+        # ).squeeze(1)
 
         losses = {
-            "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),
-            "loss_dice": dice_loss_jit(point_logits, point_labels, num_masks),
+            "loss_mask": loss_mask,
+            "loss_dice": 0,
         }
 
         del src_masks
